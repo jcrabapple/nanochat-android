@@ -32,9 +32,18 @@ class ConversationRepository @Inject constructor(
             if (response.isSuccessful && response.body() != null) {
                 val dtos = response.body()!!
                 val entities = dtos.map { it.toEntity() }
-                // Clear local conversations and insert fresh ones from API
-                conversationDao.deleteAllConversations()
-                entities.forEach { conversationDao.insertConversation(it) }
+
+                // Intelligent merge: insert or update based on updatedAt timestamp
+                // This preserves local state and avoids the "delete all" approach
+                entities.forEach { entity ->
+                    val existing = conversationDao.getConversationById(entity.id)
+                    if (existing == null || existing.updatedAt < entity.updatedAt) {
+                        // Either conversation doesn't exist locally, or server version is newer
+                        conversationDao.insertConversation(entity)
+                    }
+                    // If local version is newer, keep it (it might have local-only changes)
+                }
+
                 Result.success(entities)
             } else {
                 Result.failure(Exception("Failed to fetch conversations: ${response.code()}"))
@@ -54,34 +63,47 @@ class ConversationRepository @Inject constructor(
 
   suspend fun getConversationWithMessages(id: String): Result<ConversationEntity?> {
         return try {
-            // Try to get from API first to get fresh data with messages
-            val response = api.getConversation(id)
-            if (response.isSuccessful && response.body() != null) {
-                val dtos = response.body()!!
-                if (dtos.isNotEmpty()) {
-                    val conversationDto = dtos.first()
-                    val conversationEntity = conversationDto.toEntity()
+            // Try to get conversation from API first
+            val conversationResponse = api.getConversation(id)
+            if (conversationResponse.isSuccessful && conversationResponse.body() != null) {
+                val conversationDto = conversationResponse.body()!!
+                val conversationEntity = conversationDto.toEntity()
 
-                    // Insert conversation and messages
-                    conversationDao.insertConversation(conversationEntity)
+                // Insert conversation
+                conversationDao.insertConversation(conversationEntity)
 
-                    // Insert messages if present
-                    conversationDto.messages?.let { messageDtos ->
-                        val messageEntities = messageDtos.map { messageDto ->
-                            messageDto.toEntity(conversationEntity.id)
-                        }
-                        messageDao.insertMessages(messageEntities)
+                // Fetch messages separately using the dedicated messages endpoint
+                val messagesResponse = api.getMessages(id)
+                if (messagesResponse.isSuccessful && messagesResponse.body() != null) {
+                    val messageDtos = messagesResponse.body()!!
+
+                    android.util.Log.d("ConversationRepository", "Fetched ${messageDtos.size} messages from API for conversation $id")
+
+                    // Delete old messages for this conversation first
+                    messageDao.deleteMessagesForConversation(id)
+
+                    // Insert fresh messages
+                    val messageEntities = messageDtos.map { messageDto ->
+                        messageDto.toEntity(conversationEntity.id)
                     }
-
-                    Result.success(conversationEntity)
+                    if (messageEntities.isNotEmpty()) {
+                        messageDao.insertMessages(messageEntities)
+                        android.util.Log.d("ConversationRepository", "Inserted ${messageEntities.size} messages into database for conversation $id")
+                    } else {
+                        android.util.Log.w("ConversationRepository", "No messages to insert for conversation $id")
+                    }
                 } else {
-                    Result.success(conversationDao.getConversationById(id))
+                    android.util.Log.e("ConversationRepository", "Failed to fetch messages for conversation $id: ${messagesResponse.code()}")
                 }
+
+                Result.success(conversationEntity)
             } else {
+                android.util.Log.e("ConversationRepository", "Failed to fetch conversation $id: ${conversationResponse.code()}")
                 // Fallback to local if API fails
                 Result.success(conversationDao.getConversationById(id))
             }
         } catch (e: Exception) {
+            android.util.Log.e("ConversationRepository", "Exception fetching conversation $id: ${e.message}", e)
             // Fallback to local if network fails
             Result.success(conversationDao.getConversationById(id))
         }
@@ -141,6 +163,10 @@ class ConversationRepository @Inject constructor(
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    suspend fun insertConversation(conversation: ConversationEntity) {
+        conversationDao.insertConversation(conversation)
     }
 }
 

@@ -36,7 +36,10 @@ data class UserSettingsDto(
     val titleModelId: String? = null,
     val followUpModelId: String? = null,
     // MCP
-    val mcpEnabled: Boolean = false
+    val mcpEnabled: Boolean = false,
+    // Karakeep
+    val karakeepUrl: String? = null,
+    val karakeepApiKey: String? = null
 )
 
 @Serializable
@@ -50,5 +53,42 @@ data class SettingsUpdates(
     val followUpQuestionsEnabled: Boolean? = null,
     val titleModelId: String? = null,
     val followUpModelId: String? = null,
-    val mcpEnabled: Boolean? = null
+    val mcpEnabled: Boolean? = null,
+    val karakeepUrl: String? = null,
+    val karakeepApiKey: String? = null
+)
+
+@Serializable
+data class MessageInteractionRequest(
+    val messageId: String,
+    val action: String, // "regenerate" | "edit" | "copy" | "share"
+    val metadata: Map<String, String>? = null
+)
+
+@Serializable
+data class MessageInteractionResponse(
+    val success: Boolean,
+    val interaction: MessageInteractionDto
+)
+
+@Serializable
+data class MessageInteractionDto(
+    val id: String,
+    val messageId: String,
+    val userId: String,
+    val action: String,
+    val metadata: Map<String, String>?,
+    val createdAt: String
+)
+
+@Serializable
+data class SaveChatToKarakeepRequest(
+    val conversationId: String
+)
+
+@Serializable
+data class SaveChatToKarakeepResponse(
+    val success: Boolean,
+    val bookmarkId: String? = null,
+    val message: String? = null
 )

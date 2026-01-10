@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.ChatBubble
+import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material.icons.outlined.ChatBubble
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
@@ -167,6 +168,32 @@ fun ChatScreen(
                         }
                     },
                     actions = {
+                        // Save to Karakeep button
+                        IconButton(onClick = {
+                            val currentConversationId = uiState.conversation?.id ?: conversationId
+                            if (currentConversationId != null) {
+                                viewModel.saveChatToKarakeep { success, message ->
+                                    Toast.makeText(
+                                        context,
+                                        message,
+                                        if (success) Toast.LENGTH_SHORT else Toast.LENGTH_LONG
+                                    ).show()
+                                }
+                            } else {
+                                Toast.makeText(
+                                    context,
+                                    "No active conversation to save",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }) {
+                            Icon(
+                                Icons.Filled.Upload,
+                                contentDescription = "Save to Karakeep",
+                                tint = Color.White
+                            )
+                        }
+
                         IconButton(onClick = {
                             onNavigateToConversation(null)
                         }) {
@@ -248,6 +275,9 @@ fun ChatScreen(
                         items = messages,
                         key = { it.id }
                     ) { message ->
+                        val isLastAssistantMessage = message.role == "assistant" &&
+                            message.id == messages.lastOrNull { it.role == "assistant" }?.id
+
                         MessageBubble(
                             message = message,
                             onCopy = {
@@ -257,6 +287,14 @@ fun ChatScreen(
                                     "Copied to clipboard",
                                     Toast.LENGTH_SHORT
                                 ).show()
+                                viewModel.logMessageInteraction(message.id, "copy")
+                            },
+                            onRegenerate = if (isLastAssistantMessage) {
+                                {
+                                    viewModel.regenerateLastMessage()
+                                }
+                            } else {
+                                null
                             }
                         )
                     }

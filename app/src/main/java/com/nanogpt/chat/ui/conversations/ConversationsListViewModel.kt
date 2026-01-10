@@ -7,6 +7,8 @@ import com.nanogpt.chat.data.local.dao.ConversationDao
 import com.nanogpt.chat.data.local.entity.ConversationEntity
 import com.nanogpt.chat.data.local.entity.SyncStatus
 import com.nanogpt.chat.data.repository.ConversationRepository
+import com.nanogpt.chat.data.sync.ConversationSyncManager
+import com.nanogpt.chat.data.sync.ConversationUpdate
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -18,7 +20,8 @@ import javax.inject.Inject
 class ConversationsListViewModel @Inject constructor(
     private val conversationDao: ConversationDao,
     private val secureStorage: SecureStorage,
-    private val conversationRepository: ConversationRepository
+    private val conversationRepository: ConversationRepository,
+    private val conversationSyncManager: ConversationSyncManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ConversationsListUiState())
@@ -29,6 +32,8 @@ class ConversationsListViewModel @Inject constructor(
         observeConversations()
         // Also fetch fresh conversations from API
         loadConversationsFromApi()
+        // Listen for sync events from ChatViewModel and background worker
+        listenForSyncEvents()
     }
 
     private fun observeConversations() {
@@ -38,6 +43,29 @@ class ConversationsListViewModel @Inject constructor(
                     conversations = conversations,
                     isLoading = false
                 )
+            }
+        }
+    }
+
+    /**
+     * Listen for conversation sync events from ChatViewModel and background sync worker.
+     * Triggers a refresh from API when conversations are created/updated.
+     */
+    private fun listenForSyncEvents() {
+        viewModelScope.launch {
+            conversationSyncManager.conversationUpdates.collect { update ->
+                when (update) {
+                    is ConversationUpdate.Created,
+                    is ConversationUpdate.Updated,
+                    is ConversationUpdate.Refreshed -> {
+                        // Refresh from API to get the latest data
+                        loadConversationsFromApi()
+                    }
+                    is ConversationUpdate.Deleted -> {
+                        // Refresh to show deleted conversations are gone
+                        loadConversationsFromApi()
+                    }
+                }
             }
         }
     }

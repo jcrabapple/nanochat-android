@@ -26,6 +26,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.ui.draw.clip
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -47,6 +48,8 @@ fun ChatInputBar(
     onVoiceClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
+    val keyboardController = LocalSoftwareKeyboardController.current
+
     Surface(
         tonalElevation = 2.dp,
         modifier = modifier.fillMaxWidth()
@@ -128,7 +131,10 @@ fun ChatInputBar(
                 }
             } else {
                 IconButton(
-                    onClick = onSend,
+                    onClick = {
+                        keyboardController?.hide()
+                        onSend()
+                    },
                     enabled = text.isNotBlank()
                 ) {
                     Icon(

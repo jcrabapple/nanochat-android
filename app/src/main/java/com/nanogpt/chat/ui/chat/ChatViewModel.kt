@@ -12,7 +12,11 @@ import com.nanogpt.chat.data.remote.dto.toDomain
 import com.nanogpt.chat.data.repository.ConversationRepository
 import com.nanogpt.chat.data.repository.MessageRepository
 import com.nanogpt.chat.data.repository.WebSearchRepository
+import com.nanogpt.chat.data.repository.ConversationTitlePoller
+import com.nanogpt.chat.data.repository.toEntity
 import com.nanogpt.chat.data.local.SecureStorage
+import com.nanogpt.chat.data.sync.ConversationSyncManager
+import com.nanogpt.chat.data.local.dao.MessageDao
 import com.nanogpt.chat.data.local.entity.ConversationEntity
 import com.nanogpt.chat.ui.chat.components.ModelInfo
 import com.nanogpt.chat.data.local.entity.MessageEntity
@@ -24,6 +28,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonPrimitive
 import javax.inject.Inject
@@ -36,10 +41,13 @@ class ChatViewModel @Inject constructor(
     private val streamingManager: StreamingManager,
     private val webSearchRepository: WebSearchRepository,
     private val secureStorage: SecureStorage,
-    private val api: NanoChatApi
+    private val api: NanoChatApi,
+    private val messageDao: MessageDao,
+    private val conversationSyncManager: ConversationSyncManager,
+    private val conversationTitlePoller: ConversationTitlePoller
 ) : ViewModel() {
 
-    private val conversationId: String? = savedStateHandle["conversationId"]
+    private var conversationId: String? = savedStateHandle["conversationId"]
 
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
@@ -53,10 +61,12 @@ class ChatViewModel @Inject constructor(
     private var currentAssistantMessage: StringBuilder = StringBuilder()
     private var currentReasoning: StringBuilder = StringBuilder()
     private var isGenerating = false
+    private var titleGenerated = false // Track if title has been generated for this conversation
 
     init {
         fetchUserModels()
         if (conversationId != null) {
+            titleGenerated = true // Existing conversations already have titles
             loadConversation()
             observeMessages()
         }
@@ -114,83 +124,114 @@ class ChatViewModel @Inject constructor(
         _inputText.value = ""
 
         viewModelScope.launch {
-            try {
-                // Start generation
-                isGenerating = true
-                _uiState.value = _uiState.value.copy(isGenerating = true, error = null)
-                currentAssistantMessage = StringBuilder()
-                currentReasoning = StringBuilder()
+            sendMessageInternal(message)
+        }
+    }
 
-                // For existing conversations, add user message locally
-                if (conversationId != null) {
-                    val userMessageResult = messageRepository.createUserMessage(conversationId, message)
-                    userMessageResult.onSuccess { userMessage ->
-                        _messages.value = _messages.value + userMessage.toDomain()
-                    }
-                } else {
-                    // For new conversations, just show user message in UI
-                    _messages.value = _messages.value + Message(
-                        id = java.util.UUID.randomUUID().toString(),
-                        conversationId = "",
-                        role = "user",
-                        content = message,
-                        createdAt = System.currentTimeMillis()
-                    )
+    private suspend fun sendMessageInternal(message: String) {
+        try {
+            // Start generation
+            isGenerating = true
+            _uiState.value = _uiState.value.copy(isGenerating = true, error = null)
+            currentAssistantMessage = StringBuilder()
+            currentReasoning = StringBuilder()
+
+            // For existing conversations, add user message locally
+            val currentConversationId = conversationId
+            if (currentConversationId != null) {
+                val userMessageResult = messageRepository.createUserMessage(currentConversationId, message)
+                userMessageResult.onSuccess { userMessage ->
+                    _messages.value = _messages.value + userMessage.toDomain()
                 }
-
-                // Add placeholder for assistant message
-                val assistantMessage = Message(
+            } else {
+                // For new conversations, just show user message in UI
+                _messages.value = _messages.value + Message(
                     id = java.util.UUID.randomUUID().toString(),
-                    conversationId = conversationId ?: "",
-                    role = "assistant",
-                    content = "",
+                    conversationId = "",
+                    role = "user",
+                    content = message,
                     createdAt = System.currentTimeMillis()
                 )
-                _messages.value = _messages.value + assistantMessage
-
-                val webSearchMode = _uiState.value.webSearchMode.name.lowercase()
-                val webSearchProvider = if (_uiState.value.webSearchMode != WebSearchMode.OFF) {
-                    _uiState.value.webSearchProvider.value
-                } else {
-                    null
-                }
-
-                val request = GenerateMessageRequest(
-                    message = message,
-                    model_id = _uiState.value.selectedModel?.id ?: "gpt-4o-mini",
-                    conversation_id = conversationId,
-                    assistant_id = _uiState.value.conversation?.assistantId,
-                    web_search_enabled = _uiState.value.webSearchMode != WebSearchMode.OFF,
-                    web_search_mode = webSearchMode,
-                    web_search_provider = webSearchProvider
-                )
-
-                // Call generate-message API
-                val response = api.generateMessage(request)
-                if (!response.isSuccessful || response.body() == null) {
-                    throw Exception("Failed to generate message: HTTP ${response.code()}")
-                }
-
-                val generateResponse = response.body()!!
-                if (!generateResponse.ok) {
-                    throw Exception("Failed to generate message")
-                }
-
-                val newConversationId = generateResponse.conversation_id
-
-                // Save the conversation ID
-                secureStorage.saveLastConversationId(newConversationId)
-
-                // Start polling for messages with much longer timeout
-                pollForMessages(newConversationId)
-
-            } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    isGenerating = false,
-                    error = "Error: ${e.message}"
-                )
-                isGenerating = false
             }
+
+            // Add placeholder for assistant message
+            val assistantMessage = Message(
+                id = java.util.UUID.randomUUID().toString(),
+                conversationId = conversationId ?: "",
+                role = "assistant",
+                content = "",
+                createdAt = System.currentTimeMillis()
+            )
+            _messages.value = _messages.value + assistantMessage
+
+            val webSearchMode = _uiState.value.webSearchMode.name.lowercase()
+            val webSearchProvider = if (_uiState.value.webSearchMode != WebSearchMode.OFF) {
+                _uiState.value.webSearchProvider.value
+            } else {
+                null
+            }
+
+            val request = GenerateMessageRequest(
+                message = message,
+                model_id = _uiState.value.selectedModel?.id ?: "gpt-4o-mini",
+                conversation_id = conversationId,
+                assistant_id = _uiState.value.conversation?.assistantId,
+                web_search_enabled = _uiState.value.webSearchMode != WebSearchMode.OFF,
+                web_search_mode = webSearchMode,
+                web_search_provider = webSearchProvider
+            )
+
+            // Call generate-message API
+            val response = api.generateMessage(request)
+            if (!response.isSuccessful || response.body() == null) {
+                throw Exception("Failed to generate message: HTTP ${response.code()}")
+            }
+
+            val generateResponse = response.body()!!
+            if (!generateResponse.ok) {
+                throw Exception("Failed to generate message")
+            }
+
+            val newConversationId = generateResponse.conversation_id
+
+            // Update the conversationId for new conversations
+            if (conversationId == null) {
+                conversationId = newConversationId
+                titleGenerated = false // Reset title generation flag for new conversation
+            }
+
+            // Save the conversation ID
+            secureStorage.saveLastConversationId(newConversationId)
+
+            // For new conversations, fetch and save conversation details to database
+            try {
+                val convResponse = api.getConversation(newConversationId)
+                if (convResponse.isSuccessful && convResponse.body() != null) {
+                    val conversationDto = convResponse.body()!!
+                    val conversationEntity = conversationDto.toEntity()
+
+                    // Save conversation to database
+                    conversationRepository.insertConversation(conversationEntity)
+
+                    // Notify listeners that a new conversation was created
+                    conversationSyncManager.notifyConversationCreated(newConversationId)
+
+                    // Update UI state with the new conversation
+                    _uiState.value = _uiState.value.copy(conversation = conversationEntity)
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("ChatViewModel", "Failed to save new conversation to DB: ${e.message}")
+            }
+
+            // Start polling for messages with much longer timeout
+            pollForMessages(newConversationId)
+
+        } catch (e: Exception) {
+            _uiState.value = _uiState.value.copy(
+                isGenerating = false,
+                error = "Error: ${e.message}"
+            )
+            isGenerating = false
         }
     }
 
@@ -214,27 +255,42 @@ class ChatViewModel @Inject constructor(
                     val lastAssistantMessage = messages.lastOrNull { it.role == "assistant" }
                     val currentContent = lastAssistantMessage?.content ?: ""
 
-                    // Update UI with messages
-                    _messages.value = messages.map { dto ->
-                        dto.toDomain()
-                    }
-
                     // Check if generation is complete by tracking content changes
                     if (messages.size > lastMessageCount || currentContent != lastContent) {
                         lastMessageCount = messages.size
                         lastContent = currentContent
                         emptyPolls = 0
 
-                        // Save to database as we receive content
-                        if (lastAssistantMessage != null && currentContent.isNotEmpty()) {
-                            messageRepository.createAssistantMessage(
-                                conversationId = convId,
-                                content = currentContent,
-                                reasoning = lastAssistantMessage.reasoning
-                            )
+                        // Save messages to database atomically
+                        // Use withContext to ensure database operations complete on IO thread
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            try {
+                                for (messageDto in messages) {
+                                    val existingMessage = messageRepository.getMessageById(messageDto.id)
+                                    if (existingMessage == null) {
+                                        // Message doesn't exist in DB, insert it
+                                        val messageEntity = messageDto.toEntity(convId)
+                                        messageDao.insertMessage(messageEntity)
+                                    } else if (messageDto.role == "assistant" && currentContent.isNotEmpty()) {
+                                        // Update existing assistant message with new content
+                                        messageRepository.updateMessageContent(
+                                            messageId = messageDto.id,
+                                            content = messageDto.content,
+                                            reasoning = messageDto.reasoning
+                                        )
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                android.util.Log.e("ChatViewModel", "Failed to save messages to DB: ${e.message}")
+                            }
                         }
                     } else {
                         emptyPolls++
+                    }
+
+                    // Update UI with messages (after database save for consistency)
+                    _messages.value = messages.map { dto ->
+                        dto.toDomain()
                     }
 
                     // Stop polling if we have assistant message content and no new content for maxEmptyPolls consecutive polls
@@ -242,12 +298,36 @@ class ChatViewModel @Inject constructor(
                         polling = false
                         isGenerating = false
                         _uiState.value = _uiState.value.copy(isGenerating = false)
+
+                        // Start polling for auto-generated conversation title
+                        if (!titleGenerated) {
+                            conversationTitlePoller.startPolling(convId)
+                            titleGenerated = true
+                        }
                     }
                 }
             } catch (e: Exception) {
                 // Continue polling on error
                 android.util.Log.e("ChatViewModel", "Error polling messages: ${e.message}")
             }
+        }
+    }
+
+    private suspend fun refreshConversationDetails(convId: String) {
+        try {
+            val convResponse = api.getConversation(convId)
+            if (convResponse.isSuccessful && convResponse.body() != null) {
+                val conversationDto = convResponse.body()!!
+                val conversationEntity = conversationDto.toEntity()
+
+                // Update in database
+                conversationRepository.insertConversation(conversationEntity)
+
+                // Update UI state with the refreshed conversation (including auto-generated title)
+                _uiState.value = _uiState.value.copy(conversation = conversationEntity)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("ChatViewModel", "Failed to refresh conversation details: ${e.message}")
         }
     }
 
@@ -325,6 +405,102 @@ class ChatViewModel @Inject constructor(
         streamingManager.stopStreaming()
         isGenerating = false
         _uiState.value = _uiState.value.copy(isGenerating = false)
+    }
+
+    fun logMessageInteraction(messageId: String, action: String) {
+        viewModelScope.launch {
+            try {
+                val request = com.nanogpt.chat.data.remote.dto.MessageInteractionRequest(
+                    messageId = messageId,
+                    action = action,
+                    metadata = null
+                )
+                api.logMessageInteraction(request)
+            } catch (e: Exception) {
+                // Log error but don't show to user - interaction logging is optional
+                android.util.Log.e("ChatViewModel", "Failed to log interaction: ${e.message}")
+            }
+        }
+    }
+
+    fun regenerateLastMessage() {
+        viewModelScope.launch {
+            val messages = _messages.value
+            val lastAssistantMessage = messages.lastOrNull { it.role == "assistant" }
+
+            if (lastAssistantMessage != null) {
+                // Log the regenerate interaction
+                logMessageInteraction(lastAssistantMessage.id, "regenerate")
+
+                // Find the user message before the assistant message
+                val lastUserMessageIndex = messages.indexOfLast { it.role == "user" }
+                if (lastUserMessageIndex != -1 && lastUserMessageIndex < messages.indexOf(lastAssistantMessage)) {
+                    val userMessage = messages[lastUserMessageIndex]
+
+                    // Remove the last assistant message
+                    _messages.value = messages.toMutableList().apply {
+                        remove(lastAssistantMessage)
+                    }
+
+                    // Delete from database
+                    messageRepository.deleteMessage(lastAssistantMessage.id)
+
+                    // Regenerate with the same user message
+                    sendMessageInternal(userMessage.content)
+                }
+            }
+        }
+    }
+
+    fun saveChatToKarakeep(onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val convId = conversationId ?: uiState.value.conversation?.id
+                if (convId.isNullOrBlank()) {
+                    withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        onResult(false, "No active conversation")
+                    }
+                    return@launch
+                }
+
+                android.util.Log.d("Karakeep", "Saving chat $convId to Karakeep")
+
+                val request = com.nanogpt.chat.data.remote.dto.SaveChatToKarakeepRequest(
+                    conversationId = convId
+                )
+
+                val response = api.saveChatToKarakeep(request)
+
+                if (response.isSuccessful && response.body() != null) {
+                    val body = response.body()!!
+                    if (body.success) {
+                        val bookmarkId = body.bookmarkId ?: "unknown"
+                        android.util.Log.d("Karakeep", "Chat saved successfully, bookmark ID: $bookmarkId")
+                        withContext(kotlinx.coroutines.Dispatchers.Main) {
+                            onResult(true, "Saved to Karakeep!")
+                        }
+                    } else {
+                        val errorMsg = body.message ?: "Unknown error"
+                        android.util.Log.e("Karakeep", "Failed to save: $errorMsg")
+                        withContext(kotlinx.coroutines.Dispatchers.Main) {
+                            onResult(false, "Failed to save: $errorMsg")
+                        }
+                    }
+                } else {
+                    val errorCode = response.code()
+                    val errorMsg = "HTTP $errorCode"
+                    android.util.Log.e("Karakeep", "Failed to save: HTTP $errorCode")
+                    withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        onResult(false, "Failed: $errorMsg")
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("Karakeep", "Error saving to Karakeep: ${e.message}", e)
+                withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    onResult(false, "Error: ${e.message}")
+                }
+            }
+        }
     }
 
     fun clearError() {
@@ -473,6 +649,12 @@ class ChatViewModel @Inject constructor(
                 null
             }
         }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        // Stop all active title polling to prevent memory leaks
+        conversationTitlePoller.stopAllPolls()
     }
 }
 

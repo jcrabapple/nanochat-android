@@ -19,7 +19,7 @@ interface NanoChatApi {
     @GET("/api/db/conversations")
     suspend fun getConversation(
         @Query("id") id: String
-    ): Response<List<ConversationDto>>
+    ): Response<ConversationDto>
 
     @DELETE("/api/db/conversations")
     suspend fun deleteConversation(
@@ -97,4 +97,12 @@ interface NanoChatApi {
     suspend fun getModelProviders(
         @Query("modelId") modelId: String
     ): Response<ModelProvidersResponse>
+
+    // ============== Message Interactions ==============
+    @POST("/api/db/message-interactions")
+    suspend fun logMessageInteraction(@Body request: MessageInteractionRequest): Response<MessageInteractionResponse>
+
+    // ============== Karakeep Integration ==============
+    @POST("/api/karakeep/save-chat")
+    suspend fun saveChatToKarakeep(@Body request: SaveChatToKarakeepRequest): Response<SaveChatToKarakeepResponse>
 }

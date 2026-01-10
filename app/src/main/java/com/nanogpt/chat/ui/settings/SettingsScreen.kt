@@ -321,6 +321,22 @@ fun AccountSection(
 
         Spacer(modifier = Modifier.height(8.dp))
 
+        // Karakeep Section
+        SettingsSection(title = "Karakeep Integration") {
+            KarakeepSettings(
+                url = settings.karakeepUrl ?: "",
+                apiKey = settings.karakeepApiKey ?: "",
+                isTesting = uiState.isTestingKarakeep,
+                testResult = uiState.karakeepTestResult,
+                onSave = { url, apiKey ->
+                    viewModel.updateKarakeepSettings(url, apiKey)
+                },
+                onTest = { viewModel.testKarakeepConnection { success, message -> } }
+            )
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
         // Model Preferences Section
         SettingsSection(title = "Model Preferences") {
             ModelPreferencesSettings(
@@ -974,6 +990,125 @@ fun McpSettings(
         checked = mcpEnabled,
         onCheckedChange = onMcpEnabledChange
     )
+}
+
+@Composable
+fun KarakeepSettings(
+    url: String,
+    apiKey: String,
+    isTesting: Boolean,
+    testResult: String?,
+    onSave: (String, String) -> Unit,
+    onTest: () -> Unit
+) {
+    var urlInput by remember { mutableStateOf(url) }
+    var apiKeyInput by remember { mutableStateOf(apiKey) }
+    var hasChanges by remember { mutableStateOf(false) }
+
+    // Update local state when props change
+    androidx.compose.runtime.LaunchedEffect(url, apiKey) {
+        urlInput = url
+        apiKeyInput = apiKey
+        hasChanges = false
+    }
+
+    Column(
+        modifier = Modifier.padding(vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = "Configure your Karakeep instance to save chats as bookmarks.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        OutlinedTextField(
+            value = urlInput,
+            onValueChange = {
+                urlInput = it
+                hasChanges = it != url || apiKeyInput != apiKey
+            },
+            label = { Text("Karakeep URL") },
+            placeholder = { Text("https://karakeep.example.com") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true
+        )
+
+        OutlinedTextField(
+            value = apiKeyInput,
+            onValueChange = {
+                apiKeyInput = it
+                hasChanges = urlInput != url || it != apiKey
+            },
+            label = { Text("API Key") },
+            placeholder = { Text("your-api-key") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation()
+        )
+
+        // Test result message
+        testResult?.let { result ->
+            val isSuccess = result == "Connection successful!"
+            Surface(
+                color = if (isSuccess) {
+                    MaterialTheme.colorScheme.primaryContainer
+                } else {
+                    MaterialTheme.colorScheme.errorContainer
+                },
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = result,
+                    modifier = Modifier.padding(8.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (isSuccess) {
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onErrorContainer
+                    }
+                )
+            }
+        }
+
+        // Action buttons
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            // Test Connection button
+            Button(
+                onClick = {
+                    onTest()
+                },
+                enabled = !isTesting && urlInput.isNotBlank() && apiKeyInput.isNotBlank(),
+                modifier = Modifier.weight(1f)
+            ) {
+                if (isTesting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                } else {
+                    Text("Test Connection")
+                }
+            }
+
+            // Save Settings button
+            Button(
+                onClick = {
+                    onSave(urlInput, apiKeyInput)
+                    hasChanges = false
+                },
+                enabled = hasChanges,
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("Save Settings")
+            }
+        }
+    }
 }
 
 @Composable

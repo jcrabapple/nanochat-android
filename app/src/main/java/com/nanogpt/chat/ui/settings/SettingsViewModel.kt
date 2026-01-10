@@ -69,6 +69,7 @@ class SettingsViewModel @Inject constructor(
                 val response = api.getUserSettings()
                 if (response.isSuccessful && response.body() != null) {
                     val settings = response.body()!!
+
                     // Normalize empty strings to null for model IDs
                     val normalizedSettings = settings.copy(
                         titleModelId = normalizeModelId(settings.titleModelId),
@@ -196,6 +197,134 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    fun updateKarakeepSettings(url: String, apiKey: String) {
+        viewModelScope.launch {
+            try {
+                _uiState.value = _uiState.value.copy(isLoading = true)
+
+                // Sync to backend
+                val response = api.updateSettings(
+                    SettingsUpdates(
+                        karakeepUrl = url.ifEmpty { null },
+                        karakeepApiKey = apiKey.ifEmpty { null }
+                    )
+                )
+                if (response.isSuccessful && response.body() != null) {
+                    _uiState.value = _uiState.value.copy(
+                        settings = response.body()!!,
+                        isLoading = false,
+                        error = null,
+                        karakeepTestResult = null
+                    )
+                } else {
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        error = "Failed to update Karakeep settings: ${response.code()}"
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = "Error updating Karakeep settings: ${e.message}"
+                )
+            }
+        }
+    }
+
+    fun testKarakeepConnection(onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                _uiState.value = _uiState.value.copy(isTestingKarakeep = true, karakeepTestResult = null)
+                val settings = _uiState.value.settings
+                var url = settings?.karakeepUrl
+                val apiKey = settings?.karakeepApiKey
+
+                android.util.Log.d("KarakeepTest", "Starting test connection...")
+                android.util.Log.d("KarakeepTest", "URL from settings: $url")
+                android.util.Log.d("KarakeepTest", "API Key from settings: ${apiKey?.take(10)}...")
+
+                if (url.isNullOrBlank() || apiKey.isNullOrBlank()) {
+                    val msg = "Please enter both URL and API Key"
+                    android.util.Log.e("KarakeepTest", msg)
+                    _uiState.value = _uiState.value.copy(
+                        isTestingKarakeep = false,
+                        karakeepTestResult = msg
+                    )
+                    onResult(false, msg)
+                    return@launch
+                }
+
+                // Clean up URL
+                url = url.trim()
+                if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                    url = "https://$url"
+                }
+                val testUrl = if (url.endsWith("/")) url else "$url/"
+
+                android.util.Log.d("KarakeepTest", "Testing connection to: ${testUrl}api/v1/bookmarks")
+
+                // Test connection to Karakeep API using GET request
+                val client = okhttp3.OkHttpClient().newBuilder()
+                    .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+                    .readTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+                    .build()
+
+                val request = okhttp3.Request.Builder()
+                    .url("${testUrl}api/v1/bookmarks")
+                    .get()
+                    .header("Authorization", "Bearer $apiKey")
+                    .header("Accept", "application/json")
+                    .build()
+
+                android.util.Log.d("KarakeepTest", "Sending request...")
+                val response = client.newCall(request).execute()
+                android.util.Log.d("KarakeepTest", "Response code: ${response.code}, successful: ${response.isSuccessful}")
+
+                if (response.isSuccessful) {
+                    val successMsg = "Connection successful!"
+                    android.util.Log.d("KarakeepTest", successMsg)
+                    _uiState.value = _uiState.value.copy(
+                        isTestingKarakeep = false,
+                        karakeepTestResult = successMsg
+                    )
+                    onResult(true, successMsg)
+                } else {
+                    val errorMsg = "Connection failed: HTTP ${response.code}"
+                    val responseBody = response.body?.string()
+                    android.util.Log.e("KarakeepTest", "$errorMsg, body: $responseBody")
+                    _uiState.value = _uiState.value.copy(
+                        isTestingKarakeep = false,
+                        karakeepTestResult = errorMsg
+                    )
+                    onResult(false, errorMsg)
+                }
+            } catch (e: Exception) {
+                val exceptionType = e.javaClass.simpleName
+                val exceptionMessage = e.message ?: "No message"
+                val stackTrace = e.stackTraceToString().take(500)
+
+                android.util.Log.e("KarakeepTest", "Exception type: $exceptionType")
+                android.util.Log.e("KarakeepTest", "Exception message: $exceptionMessage")
+                android.util.Log.e("KarakeepTest", "Stack trace: $stackTrace", e)
+
+                val errorMsg = when (e) {
+                    is java.net.UnknownHostException -> "Connection failed: Host not found. Check the URL."
+                    is java.net.SocketTimeoutException -> "Connection failed: Request timed out"
+                    is javax.net.ssl.SSLException -> "Connection failed: SSL error. Check if URL uses HTTPS."
+                    is java.net.MalformedURLException -> "Connection failed: Invalid URL format."
+                    else -> "Connection failed: $exceptionType - $exceptionMessage"
+                }
+
+                android.util.Log.e("KarakeepTest", "Showing error to user: $errorMsg")
+                _uiState.value = _uiState.value.copy(
+                    isTestingKarakeep = false,
+                    karakeepTestResult = errorMsg
+                )
+                onResult(false, errorMsg)
+            }
+        }
+    }
+
     private fun updateSetting(updates: SettingsUpdates, onSuccess: () -> Unit) {
         viewModelScope.launch {
             try {
@@ -244,5 +373,8 @@ data class SettingsUiState(
     val ttsModel: String? = null,
     val ttsVoice: String? = null,
     val ttsSpeed: Float = 1.0f,
-    val sttModel: String? = null
+    val sttModel: String? = null,
+    // Karakeep testing
+    val isTestingKarakeep: Boolean = false,
+    val karakeepTestResult: String? = null
 )
