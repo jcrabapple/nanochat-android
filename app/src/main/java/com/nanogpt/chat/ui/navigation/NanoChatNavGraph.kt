@@ -76,7 +76,8 @@ fun NanoChatNavGraph(
                     },
                     onNavigateToProjects = {
                         navController.navigate(Screen.Projects.route)
-                    }
+                    },
+                    themeManager = navViewModel.themeManager
                 )
             }
 
@@ -108,7 +109,8 @@ fun NanoChatNavGraph(
                     },
                     onNavigateToProjects = {
                         navController.navigate(Screen.Projects.route)
-                    }
+                    },
+                    themeManager = navViewModel.themeManager
                 )
             }
 

@@ -269,6 +269,9 @@ fun SettingsDetailScreen(
                     viewModel = viewModel,
                     settings = settings
                 )
+                SettingsSection.CUSTOMIZATION -> CustomizationSection(
+                    themeManager = viewModel.themeManager
+                )
                 else -> PlaceholderSection(section.displayName)
             }
         }

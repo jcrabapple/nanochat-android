@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nanogpt.chat.data.local.SecureStorage
 import com.nanogpt.chat.data.remote.api.NanoChatApi
+import com.nanogpt.chat.ui.theme.ThemeManager
 import com.nanogpt.chat.data.remote.dto.SettingsUpdates
 import com.nanogpt.chat.data.remote.dto.UserSettingsDto
 import com.nanogpt.chat.data.remote.dto.parseUserModelsResponse
@@ -21,7 +22,8 @@ import javax.inject.Inject
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val api: NanoChatApi,
-    private val secureStorage: SecureStorage
+    private val secureStorage: SecureStorage,
+    val themeManager: ThemeManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())

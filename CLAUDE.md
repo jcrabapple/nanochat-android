@@ -61,8 +61,8 @@ done
 
 ### Key Modules
 
-- **`di/`** - Hilt dependency injection modules (NetworkModule, DatabaseModule, AppModule)
-- **`data/`** - Data layer with repositories, local storage, and remote APIs
+- **`di/`** - Hilt dependency injection modules (NetworkModule, DatabaseModule, AppModule, WorkManagerModule)
+- **`data/`** - Data layer with repositories, local storage, remote APIs, and background sync
 - **`ui/`** - Jetpack Compose screens and ViewModels
 
 ### Backend Integration Pattern
@@ -105,10 +105,25 @@ Current flow in `ChatViewModel.kt`:
 ### Database Schema
 
 Room database with 4 entities:
-- **ConversationEntity** - Conversations with title, assistantId, projectId
+- **ConversationEntity** - Conversations with title, assistantId, projectId, syncStatus
 - **MessageEntity** - Messages with role, content, reasoning, annotations (JSON)
 - **AssistantEntity** - Custom AI assistants with instructions
 - **ProjectEntity** - Project organization for conversations
+
+**Message Annotations:**
+The `annotationsJson` field stores JSON-serialized metadata including:
+- Web search results (citations, sources)
+- Image attachments
+- File references
+- Custom metadata from plugins
+
+### DAO Merge Behavior
+
+When fetching from API, DAOs perform intelligent merge:
+- Compares `updatedAt` timestamps
+- Preserves local changes (syncStatus = PENDING)
+- Updates stale remote data
+- Prevents overwriting user edits with server data
 
 ### Secure Storage
 
@@ -281,6 +296,42 @@ Uses `multiplatform-markdown-renderer` library for message content. Apply `Markd
 
 Multiple providers supported: Linkup, Tavily, Exa, Kagi. Provider selection in UI, API calls through `WebSearchRepository`.
 
+### Conversation Title Auto-Generation
+
+After the first message in a conversation, the backend auto-generates a title. The app uses `ConversationTitlePoller` to poll for this title:
+- Polls `/api/conversations/{id}` every 500ms
+- Stops when title changes from "New Chat" or timeout after 30 seconds
+- Updates local database and UI in real-time
+
+### Background Sync
+
+WorkManager manages periodic background sync:
+- `ConversationSyncWorker` runs periodically to sync conversations
+- Configured in `WorkManagerModule`
+- Manual refresh available in UI
+- Respects network and battery constraints
+
+### Karakeep Integration
+
+Bookmarking service integration for saving chats:
+- API endpoint: `/api/karakeep/save-chat`
+- Allows users to save conversations to Karakeep
+- Triggered from UI action in chat screen
+
+### Passkey Authentication
+
+Passkey support via Android Credentials API:
+- `CredentialsApiClient` for biometric auth
+- Alternative to password-based login
+- Configured in `LoginScreen`
+
+### Camera and Media Features
+
+CameraX integration for potential image features:
+- CameraX 1.3.4 dependency
+- Prepared for future image capture functionality
+- ExoPlayer for media playback
+
 ## File Organization
 
 ```
@@ -289,7 +340,8 @@ app/src/main/java/com/nanogpt/chat/
 ├── di/                             # Dependency injection
 │   ├── AppModule.kt
 │   ├── DatabaseModule.kt
-│   └── NetworkModule.kt
+│   ├── NetworkModule.kt
+│   └── WorkManagerModule.kt
 ├── data/
 │   ├── local/                      # Local storage
 │   │   ├── NanoChatDatabase.kt
@@ -302,7 +354,8 @@ app/src/main/java/com/nanogpt/chat/
 │   │   │   └── WebSearchApi.kt
 │   │   ├── dto/                    # API DTOs
 │   │   └── StreamingManager.kt     # SSE (unused currently)
-│   └── repository/                 # Data repositories
+│   ├── repository/                 # Data repositories
+│   └── sync/                       # Background sync workers
 └── ui/
     ├── navigation/
     │   ├── Screen.kt               # Route definitions
@@ -310,7 +363,8 @@ app/src/main/java/com/nanogpt/chat/
     │   └── NavViewModel.kt
     ├── auth/                       # Authentication flows
     │   ├── login/
-    │   └── setup/
+    │   ├── setup/
+    │   └── passkey/                # Passkey/biometric auth
     ├── chat/                       # Main chat screen
     │   ├── ChatScreen.kt
     │   ├── ChatViewModel.kt

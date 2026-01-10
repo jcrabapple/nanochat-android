@@ -55,6 +55,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.nanogpt.chat.ui.chat.components.ChatDrawer
 import com.nanogpt.chat.ui.chat.components.ChatInputBar
+import com.nanogpt.chat.ui.theme.ThemeManager
 import com.nanogpt.chat.ui.chat.components.MessageBubble
 import com.nanogpt.chat.ui.chat.components.ModelInfo
 import com.nanogpt.chat.ui.chat.components.ModelSelector
@@ -72,11 +73,13 @@ fun ChatScreen(
     onNavigateToConversation: (String?) -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
     onNavigateToAssistants: () -> Unit = {},
-    onNavigateToProjects: () -> Unit = {}
+    onNavigateToProjects: () -> Unit = {},
+    themeManager: ThemeManager
 ) {
     val messages by viewModel.messages.collectAsState()
     val inputText by viewModel.inputText.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
+    val isDarkMode by themeManager.isDarkMode.collectAsState()
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -132,7 +135,11 @@ fun ChatScreen(
                         drawerState.close()
                         onNavigateToProjects()
                     }
-                }
+                },
+                onThemeToggleClick = {
+                    themeManager.toggleDarkMode()
+                },
+                isDarkMode = isDarkMode
             )
         }
     ) {
@@ -189,8 +196,7 @@ fun ChatScreen(
                         }) {
                             Icon(
                                 Icons.Filled.Upload,
-                                contentDescription = "Save to Karakeep",
-                                tint = Color.White
+                                contentDescription = "Save to Karakeep"
                             )
                         }
 
@@ -204,12 +210,11 @@ fun ChatScreen(
                                 Icon(
                                     Icons.Filled.ChatBubble,
                                     contentDescription = "New chat",
-                                    tint = Color.White,
                                     modifier = Modifier.size(24.dp)
                                 )
                                 Text(
                                     text = "+",
-                                    color = Color.Black,
+                                    color = MaterialTheme.colorScheme.onPrimary,
                                     fontSize = 18.sp,
                                     modifier = Modifier.padding(bottom = 4.dp)
                                 )

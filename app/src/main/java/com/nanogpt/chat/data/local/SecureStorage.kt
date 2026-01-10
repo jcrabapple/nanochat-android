@@ -34,6 +34,11 @@ class SecureStorage(context: Context) {
 
         // STT Settings (local only)
         private const val KEY_STT_MODEL = "stt_model"
+
+        // Theme Settings (local only)
+        private const val KEY_LIGHT_THEME = "light_theme"
+        private const val KEY_DARK_THEME = "dark_theme"
+        private const val KEY_USE_DARK_MODE = "use_dark_mode"
     }
 
     fun saveSessionToken(token: String) {
@@ -136,5 +141,38 @@ class SecureStorage(context: Context) {
 
     fun getSttModel(): String? {
         return sharedPreferences.getString(KEY_STT_MODEL, null)
+    }
+
+    // Theme Settings (local storage only, not synced to backend)
+    fun saveLightTheme(theme: String) {
+        sharedPreferences.edit().putString(KEY_LIGHT_THEME, theme).apply()
+    }
+
+    fun getLightTheme(): String? {
+        return sharedPreferences.getString(KEY_LIGHT_THEME, null)
+    }
+
+    fun saveDarkTheme(theme: String) {
+        sharedPreferences.edit().putString(KEY_DARK_THEME, theme).apply()
+    }
+
+    fun getDarkTheme(): String? {
+        return sharedPreferences.getString(KEY_DARK_THEME, null)
+    }
+
+    fun saveUseDarkMode(useDark: Boolean?) {
+        if (useDark != null) {
+            sharedPreferences.edit().putBoolean(KEY_USE_DARK_MODE, useDark).apply()
+        } else {
+            sharedPreferences.edit().remove(KEY_USE_DARK_MODE).apply()
+        }
+    }
+
+    fun getUseDarkMode(): Boolean? {
+        return if (sharedPreferences.contains(KEY_USE_DARK_MODE)) {
+            sharedPreferences.getBoolean(KEY_USE_DARK_MODE, false)
+        } else {
+            null
+        }
     }
 }

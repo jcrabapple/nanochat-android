@@ -11,10 +11,16 @@ import androidx.core.view.WindowCompat
 import com.nanogpt.chat.data.sync.ConversationSyncWorker
 import com.nanogpt.chat.ui.navigation.NanoChatNavGraph
 import com.nanogpt.chat.ui.theme.NanoChatTheme
+import com.nanogpt.chat.ui.theme.ThemeManager
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+
+    @Inject
+    lateinit var themeManager: ThemeManager
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -25,7 +31,7 @@ class MainActivity : ComponentActivity() {
         ConversationSyncWorker.schedule(this)
 
         setContent {
-            NanoChatTheme {
+            NanoChatTheme(themeManager) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background

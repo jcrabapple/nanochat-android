@@ -27,6 +27,8 @@ import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.PushPin
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -68,6 +70,8 @@ fun ChatDrawer(
     onSettingsClick: () -> Unit,
     onAssistantsClick: () -> Unit,
     onProjectsClick: () -> Unit,
+    onThemeToggleClick: () -> Unit,
+    isDarkMode: Boolean,
     modifier: Modifier = Modifier,
     viewModel: ConversationsListViewModel = hiltViewModel()
 ) {
@@ -187,6 +191,12 @@ fun ChatDrawer(
                 }
                 IconButton(onClick = onSettingsClick) {
                     Icon(Icons.Default.Settings, contentDescription = "Settings")
+                }
+                IconButton(onClick = onThemeToggleClick) {
+                    Icon(
+                        if (isDarkMode) Icons.Default.LightMode else Icons.Default.DarkMode,
+                        contentDescription = if (isDarkMode) "Switch to Light Mode" else "Switch to Dark Mode"
+                    )
                 }
             }
         }
