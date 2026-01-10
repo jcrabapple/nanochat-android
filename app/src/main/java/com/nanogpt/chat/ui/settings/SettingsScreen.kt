@@ -37,12 +37,16 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -84,7 +88,6 @@ fun SettingsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var selectedSection by remember { mutableStateOf<SettingsSection?>(null) }
-    var showDeleteDialog by remember { mutableStateOf(false) }
 
     // If a section is selected, show that section's detail screen
     if (selectedSection != null) {
@@ -92,8 +95,7 @@ fun SettingsScreen(
             section = selectedSection!!,
             viewModel = viewModel,
             settings = uiState.settings,
-            onNavigateBack = { selectedSection = null },
-            onDeleteDialogChange = { showDeleteDialog = it }
+            onNavigateBack = { selectedSection = null }
         )
     } else {
         // Main settings list screen
@@ -161,32 +163,6 @@ fun SettingsScreen(
                 }
             }
         }
-    }
-
-    // Delete confirmation dialog
-    if (showDeleteDialog) {
-        AlertDialog(
-            onDismissRequest = { showDeleteDialog = false },
-            title = { Text("Delete All Chats") },
-            text = {
-                Text("Are you sure you want to delete all chats? This action cannot be undone.")
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        // TODO: Implement delete all chats
-                        showDeleteDialog = false
-                    }
-                ) {
-                    Text("Delete", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteDialog = false }) {
-                    Text("Cancel")
-                }
-            }
-        )
     }
 }
 
@@ -265,8 +241,7 @@ fun SettingsDetailScreen(
     section: SettingsSection,
     viewModel: SettingsViewModel,
     settings: com.nanogpt.chat.data.remote.dto.UserSettingsDto?,
-    onNavigateBack: () -> Unit,
-    onDeleteDialogChange: (Boolean) -> Unit
+    onNavigateBack: () -> Unit
 ) {
     // Handle Android back button/gesture
     BackHandler(onBack = onNavigateBack)
@@ -292,9 +267,7 @@ fun SettingsDetailScreen(
             when (section) {
                 SettingsSection.ACCOUNT -> AccountSection(
                     viewModel = viewModel,
-                    settings = settings,
-                    showDeleteDialog = false,
-                    onDeleteDialogChange = onDeleteDialogChange
+                    settings = settings
                 )
                 else -> PlaceholderSection(section.displayName)
             }
@@ -305,18 +278,18 @@ fun SettingsDetailScreen(
 @Composable
 fun AccountSection(
     viewModel: SettingsViewModel,
-    settings: com.nanogpt.chat.data.remote.dto.UserSettingsDto?,
-    showDeleteDialog: Boolean,
-    onDeleteDialogChange: (Boolean) -> Unit
+    settings: com.nanogpt.chat.data.remote.dto.UserSettingsDto?
 ) {
+    val uiState by viewModel.uiState.collectAsState()
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var showDeleteSuccessDialog by remember { mutableStateOf(false) }
+
     settings?.let {
         // Privacy Section
         SettingsSection(title = "Privacy") {
             PrivacySettings(
-                privacyMode = settings.privacyMode,
                 contextMemory = settings.contextMemoryEnabled,
                 persistentMemory = settings.persistentMemoryEnabled,
-                onPrivacyModeChange = { viewModel.updatePrivacyMode(it) },
                 onContextMemoryChange = { viewModel.updateContextMemory(it) },
                 onPersistentMemoryChange = { viewModel.updatePersistentMemory(it) }
             )
@@ -338,11 +311,22 @@ fun AccountSection(
 
         Spacer(modifier = Modifier.height(8.dp))
 
+        // MCP Section
+        SettingsSection(title = "MCP Integration") {
+            McpSettings(
+                mcpEnabled = settings.mcpEnabled,
+                onMcpEnabledChange = { viewModel.updateMcpEnabled(it) }
+            )
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
         // Model Preferences Section
         SettingsSection(title = "Model Preferences") {
             ModelPreferencesSettings(
-                chatTitleModel = settings.chatTitleModel,
-                followUpQuestionsModel = settings.followUpQuestionsModel,
+                chatTitleModel = settings.titleModelId,
+                followUpQuestionsModel = settings.followUpModelId,
+                userModels = uiState.userModels,
                 onChatTitleModelChange = { viewModel.updateChatTitleModel(it) },
                 onFollowUpQuestionsModelChange = { viewModel.updateFollowUpQuestionsModel(it) }
             )
@@ -353,9 +337,9 @@ fun AccountSection(
         // Text-to-Speech Section
         SettingsSection(title = "Text-to-Speech") {
             TtsSettings(
-                model = settings.ttsModel,
-                voice = settings.ttsVoice,
-                speed = settings.ttsSpeed,
+                model = uiState.ttsModel,
+                voice = uiState.ttsVoice,
+                speed = uiState.ttsSpeed,
                 onModelChange = { viewModel.updateTtsModel(it) },
                 onVoiceChange = { viewModel.updateTtsVoice(it) },
                 onSpeedChange = { viewModel.updateTtsSpeed(it) }
@@ -367,18 +351,8 @@ fun AccountSection(
         // Speech-to-Text Section
         SettingsSection(title = "Speech-to-Text") {
             SttSettings(
-                model = settings.sttModel,
+                model = uiState.sttModel,
                 onModelChange = { viewModel.updateSttModel(it) }
-            )
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // MCP Section
-        SettingsSection(title = "MCP Integration") {
-            McpSettings(
-                nanoGptMcpEnabled = settings.nanoGptMcpEnabled,
-                onNanoGptMcpChange = { viewModel.updateNanoGptMcp(it) }
             )
         }
 
@@ -387,11 +361,59 @@ fun AccountSection(
         // Data Management Section
         SettingsSection(title = "Data Management") {
             DataManagementSettings(
-                onDeleteAllChats = { onDeleteDialogChange(true) }
+                onDeleteAllChats = { showDeleteDialog = true }
             )
         }
 
         Spacer(modifier = Modifier.height(16.dp))
+    }
+
+    // Delete confirmation dialog
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("Delete All Chats") },
+            text = {
+                Text("Are you sure you want to delete all chats? This action cannot be undone.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.deleteAllChats(
+                            onSuccess = {
+                                showDeleteDialog = false
+                                showDeleteSuccessDialog = true
+                            },
+                            onError = { error ->
+                                viewModel.clearError()
+                                // Show error via uiState
+                            }
+                        )
+                    }
+                ) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Success dialog
+    if (showDeleteSuccessDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteSuccessDialog = false },
+            title = { Text("Success") },
+            text = { Text("All chats have been deleted successfully.") },
+            confirmButton = {
+                TextButton(onClick = { showDeleteSuccessDialog = false }) {
+                    Text("OK")
+                }
+            }
+        )
     }
 }
 
@@ -450,19 +472,11 @@ fun SettingsSection(
 
 @Composable
 fun PrivacySettings(
-    privacyMode: Boolean,
     contextMemory: Boolean,
     persistentMemory: Boolean,
-    onPrivacyModeChange: (Boolean) -> Unit,
     onContextMemoryChange: (Boolean) -> Unit,
     onPersistentMemoryChange: (Boolean) -> Unit
 ) {
-    SettingSwitch(
-        title = "Privacy Mode",
-        description = "Hide personal information in sidebar",
-        checked = privacyMode,
-        onCheckedChange = onPrivacyModeChange
-    )
     SettingSwitch(
         title = "Context Memory",
         description = "Compress long conversations for better context",
@@ -506,15 +520,17 @@ fun ContentProcessingSettings(
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ModelPreferencesSettings(
     chatTitleModel: String?,
     followUpQuestionsModel: String?,
+    userModels: List<com.nanogpt.chat.data.remote.dto.UserModelDto>,
     onChatTitleModelChange: (String?) -> Unit,
     onFollowUpQuestionsModelChange: (String?) -> Unit
 ) {
-    var showChatTitleModelDialog by remember { mutableStateOf(false) }
-    var showFollowUpModelDialog by remember { mutableStateOf(false) }
+    var chatTitleExpanded by remember { mutableStateOf(false) }
+    var followUpExpanded by remember { mutableStateOf(false) }
 
     // Chat Title Generation Model
     Column(modifier = Modifier.padding(vertical = 4.dp)) {
@@ -527,11 +543,47 @@ fun ModelPreferencesSettings(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Button(
-            onClick = { showChatTitleModelDialog = true },
-            modifier = Modifier.padding(top = 4.dp)
-        ) {
-            Text(chatTitleModel ?: "Default (GLM-4.5-Air)")
+
+        Box(modifier = Modifier.padding(top = 4.dp)) {
+            ExposedDropdownMenuBox(
+                expanded = chatTitleExpanded,
+                onExpandedChange = { chatTitleExpanded = it }
+            ) {
+                OutlinedTextField(
+                    value = if (chatTitleModel.isNullOrEmpty()) "GLM-4.5-Air" else chatTitleModel,
+                    onValueChange = {},
+                    readOnly = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .menuAnchor(),
+                    trailingIcon = {
+                        ExposedDropdownMenuDefaults.TrailingIcon(expanded = chatTitleExpanded)
+                    }
+                )
+                ExposedDropdownMenu(
+                    expanded = chatTitleExpanded,
+                    onDismissRequest = { chatTitleExpanded = false }
+                ) {
+                    // Default option
+                    DropdownMenuItem(
+                        text = { Text("GLM-4.5-Air") },
+                        onClick = {
+                            onChatTitleModelChange(null)
+                            chatTitleExpanded = false
+                        }
+                    )
+                    // User models
+                    userModels.forEach { model ->
+                        DropdownMenuItem(
+                            text = { Text(model.modelId) },
+                            onClick = {
+                                onChatTitleModelChange(model.modelId)
+                                chatTitleExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
         }
     }
 
@@ -548,17 +600,52 @@ fun ModelPreferencesSettings(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Button(
-            onClick = { showFollowUpModelDialog = true },
-            modifier = Modifier.padding(top = 4.dp)
-        ) {
-            Text(followUpQuestionsModel ?: "Default (GLM-4.5-Air)")
+
+        Box(modifier = Modifier.padding(top = 4.dp)) {
+            ExposedDropdownMenuBox(
+                expanded = followUpExpanded,
+                onExpandedChange = { followUpExpanded = it }
+            ) {
+                OutlinedTextField(
+                    value = if (followUpQuestionsModel.isNullOrEmpty()) "GLM-4.5-Air" else followUpQuestionsModel,
+                    onValueChange = {},
+                    readOnly = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .menuAnchor(),
+                    trailingIcon = {
+                        ExposedDropdownMenuDefaults.TrailingIcon(expanded = followUpExpanded)
+                    }
+                )
+                ExposedDropdownMenu(
+                    expanded = followUpExpanded,
+                    onDismissRequest = { followUpExpanded = false }
+                ) {
+                    // Default option
+                    DropdownMenuItem(
+                        text = { Text("GLM-4.5-Air") },
+                        onClick = {
+                            onFollowUpQuestionsModelChange(null)
+                            followUpExpanded = false
+                        }
+                    )
+                    // User models
+                    userModels.forEach { model ->
+                        DropdownMenuItem(
+                            text = { Text(model.modelId) },
+                            onClick = {
+                                onFollowUpQuestionsModelChange(model.modelId)
+                                followUpExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
         }
     }
-
-    // TODO: Add model selection dialogs
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TtsSettings(
     model: String?,
@@ -568,8 +655,133 @@ fun TtsSettings(
     onVoiceChange: (String?) -> Unit,
     onSpeedChange: (Float) -> Unit
 ) {
-    var showModelDialog by remember { mutableStateOf(false) }
-    var showVoiceDialog by remember { mutableStateOf(false) }
+    var modelExpanded by remember { mutableStateOf(false) }
+    var voiceExpanded by remember { mutableStateOf(false) }
+
+    // Available TTS models with pricing
+    val ttsModels = listOf(
+        "tts-1" to "TTS-1 (OpenAI) - $0.015/1k chars",
+        "Kokoro-82m" to "Kokoro-82m - $0.001/1k chars",
+        "Elevenlabs-Turbo-V2.5" to "Elevenlabs Turbo V2.5 - $0.06/1k chars",
+        "tts-1-hd" to "TTS-1 HD (OpenAI) - $0.030/1k chars",
+        "gpt-4o-mini-tts" to "GPT-4o Mini TTS - $0.0006/1k chars"
+    )
+
+    // Voices available for each model
+    val kokoroVoices = listOf(
+        "af_alloy" to "Alloy (Female US)",
+        "af_aoede" to "Aoede (Female US)",
+        "af_bella" to "Bella (Female US)",
+        "af_jessica" to "Jessica (Female US)",
+        "af_nova" to "Nova (Female US)",
+        "am_adam" to "Adam (Male US)",
+        "am_echo" to "Echo (Male US)",
+        "am_eric" to "Eric (Male US)",
+        "am_liam" to "Liam (Male US)",
+        "am_onyx" to "Onyx (Male US)",
+        "bf_alice" to "Alice (Female UK)",
+        "bf_emma" to "Emma (Female UK)",
+        "bf_isabella" to "Isabella (Female UK)",
+        "bf_lily" to "Lily (Female UK)",
+        "bm_daniel" to "Daniel (Male UK)",
+        "bm_fable" to "Fable (Male UK)",
+        "bm_george" to "George (Male UK)",
+        "bm_lewis" to "Lewis (Male UK)",
+        "jf_alpha" to "Alpha (Female JP)",
+        "jf_gongitsune" to "Gongitsune (Female JP)",
+        "jf_nezumi" to "Nezumi (Female JP)",
+        "jf_tebukuro" to "Tebukuro (Female JP)",
+        "zf_xiaobei" to "Xiaobei (Female CN)",
+        "zf_xiaoni" to "Xiaoni (Female CN)",
+        "zf_xiaoxiao" to "Xiaoxiao (Female CN)",
+        "zf_xiaoyi" to "Xiaoyi (Female CN)",
+        "ff_siwis" to "Siwis (Female FR)",
+        "im_nicola" to "Nicola (Male IT)",
+        "hf_alpha" to "Alpha (Female HI)",
+        "hf_beta" to "Beta (Female HI)"
+    )
+
+    val elevenlabsVoices = listOf(
+        "Adam" to "Adam",
+        "Alice" to "Alice",
+        "Antoni" to "Antoni",
+        "Aria" to "Aria",
+        "Arnold" to "Arnold",
+        "Bella" to "Bella",
+        "Bill" to "Bill",
+        "Brian" to "Brian",
+        "Callum" to "Callum",
+        "Charlie" to "Charlie",
+        "Charlotte" to "Charlotte",
+        "Chris" to "Chris",
+        "Daniel" to "Daniel",
+        "Domi" to "Domi",
+        "Dorothy" to "Dorothy",
+        "Drew" to "Drew",
+        "Elli" to "Elli",
+        "Emily" to "Emily",
+        "Eric" to "Eric",
+        "Ethan" to "Ethan",
+        "Fin" to "Fin",
+        "Freya" to "Freya",
+        "George" to "George",
+        "Gigi" to "Gigi",
+        "Giovanni" to "Giovanni",
+        "Grace" to "Grace",
+        "James" to "James",
+        "Jeremy" to "Jeremy",
+        "Jessica" to "Jessica",
+        "Joseph" to "Joseph",
+        "Josh" to "Josh",
+        "Laura" to "Laura",
+        "Liam" to "Liam",
+        "Lily" to "Lily",
+        "Matilda" to "Matilda",
+        "Matthew" to "Matthew",
+        "Michael" to "Michael",
+        "Nicole" to "Nicole",
+        "Rachel" to "Rachel",
+        "River" to "River",
+        "Roger" to "Roger",
+        "Ryan" to "Ryan",
+        "Sam" to "Sam",
+        "Sarah" to "Sarah",
+        "Thomas" to "Thomas",
+        "Will" to "Will"
+    )
+
+    val openaiVoices = listOf(
+        "alloy" to "Alloy",
+        "ash" to "Ash",
+        "ballad" to "Ballad",
+        "coral" to "Coral",
+        "echo" to "Echo",
+        "fable" to "Fable",
+        "onyx" to "Onyx",
+        "nova" to "Nova",
+        "sage" to "Sage",
+        "shimmer" to "Shimmer",
+        "verse" to "Verse"
+    )
+
+    // Get voices for selected model
+    val availableVoices = when (model) {
+        "Kokoro-82m" -> kokoroVoices
+        "Elevenlabs-Turbo-V2.5" -> elevenlabsVoices
+        "tts-1", "tts-1-hd", "gpt-4o-mini-tts" -> openaiVoices
+        else -> openaiVoices // Default
+    }
+
+    // Get default voice for model
+    val defaultVoiceForModel = when (model) {
+        "Kokoro-82m" -> "af_alloy"
+        "Elevenlabs-Turbo-V2.5" -> "Rachel"
+        "tts-1", "tts-1-hd", "gpt-4o-mini-tts" -> "alloy"
+        else -> "alloy"
+    }
+
+    // Current display voice
+    val currentVoice = voice ?: defaultVoiceForModel
 
     // TTS Model
     Column(modifier = Modifier.padding(vertical = 4.dp)) {
@@ -582,11 +794,46 @@ fun TtsSettings(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Button(
-            onClick = { showModelDialog = true },
-            modifier = Modifier.padding(top = 4.dp)
-        ) {
-            Text(model ?: "TTS-1 (Standard) - $0.015/1k")
+
+        Box(modifier = Modifier.padding(top = 4.dp)) {
+            ExposedDropdownMenuBox(
+                expanded = modelExpanded,
+                onExpandedChange = { modelExpanded = it }
+            ) {
+                OutlinedTextField(
+                    value = model ?: "tts-1",
+                    onValueChange = {},
+                    readOnly = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .menuAnchor(),
+                    trailingIcon = {
+                        ExposedDropdownMenuDefaults.TrailingIcon(expanded = modelExpanded)
+                    }
+                )
+                ExposedDropdownMenu(
+                    expanded = modelExpanded,
+                    onDismissRequest = { modelExpanded = false }
+                ) {
+                    ttsModels.forEach { (modelId, displayName) ->
+                        DropdownMenuItem(
+                            text = { Text(displayName) },
+                            onClick = {
+                                onModelChange(modelId)
+                                // Reset voice to default for new model
+                                val newDefaultVoice = when (modelId) {
+                                    "Kokoro-82m" -> "af_alloy"
+                                    "Elevenlabs-Turbo-V2.5" -> "Rachel"
+                                    "tts-1", "tts-1-hd", "gpt-4o-mini-tts" -> "alloy"
+                                    else -> "alloy"
+                                }
+                                onVoiceChange(newDefaultVoice)
+                                modelExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
         }
     }
 
@@ -603,11 +850,38 @@ fun TtsSettings(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Button(
-            onClick = { showVoiceDialog = true },
-            modifier = Modifier.padding(top = 4.dp)
-        ) {
-            Text(voice ?: "Alloy")
+
+        Box(modifier = Modifier.padding(top = 4.dp)) {
+            ExposedDropdownMenuBox(
+                expanded = voiceExpanded,
+                onExpandedChange = { voiceExpanded = it }
+            ) {
+                OutlinedTextField(
+                    value = availableVoices.find { it.first == currentVoice }?.second ?: currentVoice,
+                    onValueChange = {},
+                    readOnly = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .menuAnchor(),
+                    trailingIcon = {
+                        ExposedDropdownMenuDefaults.TrailingIcon(expanded = voiceExpanded)
+                    }
+                )
+                ExposedDropdownMenu(
+                    expanded = voiceExpanded,
+                    onDismissRequest = { voiceExpanded = false }
+                ) {
+                    availableVoices.forEach { (voiceId, displayName) ->
+                        DropdownMenuItem(
+                            text = { Text(displayName) },
+                            onClick = {
+                                onVoiceChange(voiceId)
+                                voiceExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
         }
     }
 
@@ -626,16 +900,22 @@ fun TtsSettings(
             steps = 5
         )
     }
-
-    // TODO: Add model and voice selection dialogs
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SttSettings(
     model: String?,
     onModelChange: (String?) -> Unit
 ) {
-    var showModelDialog by remember { mutableStateOf(false) }
+    var modelExpanded by remember { mutableStateOf(false) }
+
+    // Available STT models
+    val sttModels = listOf(
+        "Whisper-Large-V3" to "Whisper Large V3 (OpenAI) - $0.01/min",
+        "Wizper" to "Wizper - Fast & Efficient - $0.01/min",
+        "Elevenlabs-STT" to "Elevenlabs STT - Premium - $0.03/min"
+    )
 
     Column(modifier = Modifier.padding(vertical = 4.dp)) {
         Text(
@@ -647,27 +927,52 @@ fun SttSettings(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Button(
-            onClick = { showModelDialog = true },
-            modifier = Modifier.padding(top = 4.dp)
-        ) {
-            Text(model ?: "Whisper Large V3 (OpenAI) - $0.01/min")
+
+        Box(modifier = Modifier.padding(top = 4.dp)) {
+            ExposedDropdownMenuBox(
+                expanded = modelExpanded,
+                onExpandedChange = { modelExpanded = it }
+            ) {
+                OutlinedTextField(
+                    value = model ?: "Whisper-Large-V3",
+                    onValueChange = {},
+                    readOnly = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .menuAnchor(),
+                    trailingIcon = {
+                        ExposedDropdownMenuDefaults.TrailingIcon(expanded = modelExpanded)
+                    }
+                )
+                ExposedDropdownMenu(
+                    expanded = modelExpanded,
+                    onDismissRequest = { modelExpanded = false }
+                ) {
+                    sttModels.forEach { (modelId, displayName) ->
+                        DropdownMenuItem(
+                            text = { Text(displayName) },
+                            onClick = {
+                                onModelChange(modelId)
+                                modelExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
         }
     }
-
-    // TODO: Add model selection dialog
 }
 
 @Composable
 fun McpSettings(
-    nanoGptMcpEnabled: Boolean,
-    onNanoGptMcpChange: (Boolean) -> Unit
+    mcpEnabled: Boolean,
+    onMcpEnabledChange: (Boolean) -> Unit
 ) {
     SettingSwitch(
         title = "Nano-GPT MCP",
         description = "Supports Vision, YouTube Transcripts, Web Scraping, Nano-GPT Balance, Image Generation, and Model Lists",
-        checked = nanoGptMcpEnabled,
-        onCheckedChange = onNanoGptMcpChange
+        checked = mcpEnabled,
+        onCheckedChange = onMcpEnabledChange
     )
 }
 

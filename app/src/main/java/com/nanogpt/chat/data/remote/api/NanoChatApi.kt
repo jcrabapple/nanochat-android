@@ -23,7 +23,8 @@ interface NanoChatApi {
 
     @DELETE("/api/db/conversations")
     suspend fun deleteConversation(
-        @Query("id") id: String
+        @Query("id") id: String? = null,
+        @Query("all") all: String? = null
     ): Response<Unit>
 
     // ============== Messages ==============

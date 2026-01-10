@@ -30,6 +30,9 @@ class StreamingManager @Inject constructor(
     private val secureStorage: SecureStorage
 ) {
 
+    // Track the current call for cancellation
+    private var currentCall: okhttp3.Call? = null
+
     sealed class StreamEvent {
         data class TokenReceived(val token: String) : StreamEvent()
         data class ContentDelta(val content: String) : StreamEvent()
@@ -63,12 +66,17 @@ class StreamingManager @Inject constructor(
                 .post(requestBody)
                 .header("Authorization", "Bearer ${secureStorage.getSessionToken()}")
                 .header("Accept", "text/event-stream")
+                .header("Cache-Control", "no-cache")
+                .header("Connection", "keep-alive")
                 .build()
 
-            val response = okHttpClient.newCall(httpRequest).execute()
+            // Store the call for cancellation
+            currentCall = okHttpClient.newCall(httpRequest)
 
-            if (!response.isSuccessful) {
-                return@withContext Result.failure(Exception("HTTP ${response.code}"))
+            val response = currentCall?.execute()
+
+            if (response == null || !response.isSuccessful) {
+                return@withContext Result.failure(Exception("HTTP ${response?.code ?: "unknown"}"))
             }
 
             val body = response.body ?: return@withContext Result.failure(
@@ -76,13 +84,22 @@ class StreamingManager @Inject constructor(
             )
 
             BufferedReader(InputStreamReader(body.byteStream())).use { reader ->
-                var line: String?
+                var line: String? = null
                 var conversationId: String? = request.conversation_id
+                var lastEventTime = System.currentTimeMillis()
 
-                while (reader.readLine().also { line = it } != null) {
+                while (currentCall?.isCanceled() != true && reader.readLine().also { line = it } != null) {
+                    // Check for timeout (no data for 5 minutes)
+                    val now = System.currentTimeMillis()
+                    if (now - lastEventTime > 300000) {
+                        onEvent(StreamEvent.Error("Stream timeout after 5 minutes"))
+                        break
+                    }
+
                     val currentLine = line
                     when {
                         currentLine?.startsWith("data: ") == true -> {
+                            lastEventTime = now
                             val data = currentLine.removePrefix("data: ").trim()
 
                             if (data == "[DONE]") {
@@ -96,17 +113,24 @@ class StreamingManager @Inject constructor(
                                     conversationId = newConvId
                                 }
                             } catch (e: Exception) {
-                                // Log parse error but continue
-                                println("Error parsing SSE data: ${e.message}")
+                                // Log parse error but continue streaming
+                                android.util.Log.e("StreamingManager", "Error parsing SSE data: ${e.message}")
                             }
                         }
                     }
+                }
+
+                // If we exited the loop without [DONE], handle appropriately
+                if (currentCall?.isCanceled() == true) {
+                    onEvent(StreamEvent.Error("Generation cancelled"))
                 }
             }
 
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
+        } finally {
+            currentCall = null
         }
     }
 
@@ -150,7 +174,8 @@ class StreamingManager @Inject constructor(
     }
 
     fun stopStreaming() {
-        // Cancel any ongoing streaming
-        // Implementation depends on how we track active streams
+        // Cancel the ongoing streaming request
+        currentCall?.cancel()
+        currentCall = null
     }
 }

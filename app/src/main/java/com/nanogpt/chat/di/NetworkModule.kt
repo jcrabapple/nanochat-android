@@ -27,7 +27,7 @@ object NetworkModule {
         ignoreUnknownKeys = true
         coerceInputValues = true
         isLenient = true
-        encodeDefaults = false
+        encodeDefaults = true
         explicitNulls = false
     }
 

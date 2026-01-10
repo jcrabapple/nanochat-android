@@ -26,6 +26,14 @@ class SecureStorage(context: Context) {
         private const val KEY_USER_EMAIL = "user_email"
         private const val KEY_LAST_MODEL_ID = "last_model_id"
         private const val KEY_LAST_CONVERSATION_ID = "last_conversation_id"
+
+        // TTS Settings (local only)
+        private const val KEY_TTS_MODEL = "tts_model"
+        private const val KEY_TTS_VOICE = "tts_voice"
+        private const val KEY_TTS_SPEED = "tts_speed"
+
+        // STT Settings (local only)
+        private const val KEY_STT_MODEL = "stt_model"
     }
 
     fun saveSessionToken(token: String) {
@@ -82,5 +90,51 @@ class SecureStorage(context: Context) {
 
     fun getLastConversationId(): String? {
         return sharedPreferences.getString(KEY_LAST_CONVERSATION_ID, null)
+    }
+
+    // TTS Settings (local storage only, not synced to backend)
+    fun saveTtsModel(model: String?) {
+        if (model != null) {
+            sharedPreferences.edit().putString(KEY_TTS_MODEL, model).apply()
+        } else {
+            sharedPreferences.edit().remove(KEY_TTS_MODEL).apply()
+        }
+    }
+
+    fun getTtsModel(): String? {
+        return sharedPreferences.getString(KEY_TTS_MODEL, null)
+    }
+
+    fun saveTtsVoice(voice: String?) {
+        if (voice != null) {
+            sharedPreferences.edit().putString(KEY_TTS_VOICE, voice).apply()
+        } else {
+            sharedPreferences.edit().remove(KEY_TTS_VOICE).apply()
+        }
+    }
+
+    fun getTtsVoice(): String? {
+        return sharedPreferences.getString(KEY_TTS_VOICE, null)
+    }
+
+    fun saveTtsSpeed(speed: Float) {
+        sharedPreferences.edit().putFloat(KEY_TTS_SPEED, speed).apply()
+    }
+
+    fun getTtsSpeed(): Float {
+        return sharedPreferences.getFloat(KEY_TTS_SPEED, 1.0f)
+    }
+
+    // STT Settings (local storage only, not synced to backend)
+    fun saveSttModel(model: String?) {
+        if (model != null) {
+            sharedPreferences.edit().putString(KEY_STT_MODEL, model).apply()
+        } else {
+            sharedPreferences.edit().remove(KEY_STT_MODEL).apply()
+        }
+    }
+
+    fun getSttModel(): String? {
+        return sharedPreferences.getString(KEY_STT_MODEL, null)
     }
 }

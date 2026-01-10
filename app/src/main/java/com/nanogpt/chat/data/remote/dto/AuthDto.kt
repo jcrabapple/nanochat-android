@@ -33,16 +33,10 @@ data class UserSettingsDto(
     val webScrapingEnabled: Boolean = true,
     val followUpQuestionsEnabled: Boolean = true,
     // Model Preferences
-    val chatTitleModel: String? = null,
-    val followUpQuestionsModel: String? = null,
-    // TTS
-    val ttsModel: String? = null,
-    val ttsVoice: String? = null,
-    val ttsSpeed: Float = 1.0f,
-    // STT
-    val sttModel: String? = null,
+    val titleModelId: String? = null,
+    val followUpModelId: String? = null,
     // MCP
-    val nanoGptMcpEnabled: Boolean = false
+    val mcpEnabled: Boolean = false
 )
 
 @Serializable
@@ -54,11 +48,7 @@ data class SettingsUpdates(
     val youtubeTranscriptsEnabled: Boolean? = null,
     val webScrapingEnabled: Boolean? = null,
     val followUpQuestionsEnabled: Boolean? = null,
-    val chatTitleModel: String? = null,
-    val followUpQuestionsModel: String? = null,
-    val ttsModel: String? = null,
-    val ttsVoice: String? = null,
-    val ttsSpeed: Float? = null,
-    val sttModel: String? = null,
-    val nanoGptMcpEnabled: Boolean? = null
+    val titleModelId: String? = null,
+    val followUpModelId: String? = null,
+    val mcpEnabled: Boolean? = null
 )

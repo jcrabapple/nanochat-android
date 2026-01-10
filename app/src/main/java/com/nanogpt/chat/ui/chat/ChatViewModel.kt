@@ -181,7 +181,7 @@ class ChatViewModel @Inject constructor(
                 // Save the conversation ID
                 secureStorage.saveLastConversationId(newConversationId)
 
-                // Start polling for messages
+                // Start polling for messages with much longer timeout
                 pollForMessages(newConversationId)
 
             } catch (e: Exception) {
@@ -198,6 +198,8 @@ class ChatViewModel @Inject constructor(
         var polling = true
         var lastMessageCount = 0
         var emptyPolls = 0
+        val maxEmptyPolls = 6 // 3 seconds (6 * 500ms) - feels immediate but allows for brief pauses
+        var lastContent = ""
 
         while (polling && isGenerating) {
             try {
@@ -208,39 +210,43 @@ class ChatViewModel @Inject constructor(
                 if (messagesResponse.isSuccessful && messagesResponse.body() != null) {
                     val messages = messagesResponse.body()!!
 
+                    // Get the last assistant message
+                    val lastAssistantMessage = messages.lastOrNull { it.role == "assistant" }
+                    val currentContent = lastAssistantMessage?.content ?: ""
+
                     // Update UI with messages
                     _messages.value = messages.map { dto ->
                         dto.toDomain()
                     }
 
-                    // Check if generation is complete
-                    if (messages.size > lastMessageCount) {
+                    // Check if generation is complete by tracking content changes
+                    if (messages.size > lastMessageCount || currentContent != lastContent) {
                         lastMessageCount = messages.size
+                        lastContent = currentContent
                         emptyPolls = 0
+
+                        // Save to database as we receive content
+                        if (lastAssistantMessage != null && currentContent.isNotEmpty()) {
+                            messageRepository.createAssistantMessage(
+                                conversationId = convId,
+                                content = currentContent,
+                                reasoning = lastAssistantMessage.reasoning
+                            )
+                        }
                     } else {
                         emptyPolls++
                     }
 
-                    // Stop polling if we have assistant message content and no new messages for 3 consecutive polls
-                    val lastMessage = messages.lastOrNull()
-                    if (lastMessage?.role == "assistant" && lastMessage.content.isNotEmpty() && emptyPolls >= 6) {
+                    // Stop polling if we have assistant message content and no new content for maxEmptyPolls consecutive polls
+                    if (lastAssistantMessage != null && currentContent.isNotEmpty() && emptyPolls >= maxEmptyPolls) {
                         polling = false
                         isGenerating = false
                         _uiState.value = _uiState.value.copy(isGenerating = false)
-
-                        // Save final assistant message to database
-                        val assistantMsg = messages.lastOrNull { it.role == "assistant" }
-                        if (assistantMsg != null && convId.isNotEmpty()) {
-                            messageRepository.createAssistantMessage(
-                                conversationId = convId,
-                                content = assistantMsg.content,
-                                reasoning = assistantMsg.reasoning
-                            )
-                        }
                     }
                 }
             } catch (e: Exception) {
                 // Continue polling on error
+                android.util.Log.e("ChatViewModel", "Error polling messages: ${e.message}")
             }
         }
     }
@@ -271,20 +277,26 @@ class ChatViewModel @Inject constructor(
                     conversation?.let {
                         _uiState.value = _uiState.value.copy(conversation = it)
                     }
+                    // Save last conversation ID
+                    secureStorage.saveLastConversationId(event.conversationId)
                 }
             }
             is StreamingManager.StreamEvent.Complete -> {
                 isGenerating = false
                 _uiState.value = _uiState.value.copy(isGenerating = false)
 
-                // Save final assistant message only if we have a conversation ID
-                if (currentAssistantMessage.isNotEmpty() && conversationId != null) {
+                // Save final assistant message to database
+                if (currentAssistantMessage.isNotEmpty()) {
                     viewModelScope.launch {
-                        messageRepository.createAssistantMessage(
-                            conversationId = conversationId,
-                            content = currentAssistantMessage.toString(),
-                            reasoning = currentReasoning.toString().takeIf { it.isNotEmpty() }
-                        )
+                        // Use the conversation ID from the event if available, otherwise use the current one
+                        val convId = event.messageId ?: conversationId
+                        if (convId != null) {
+                            messageRepository.createAssistantMessage(
+                                conversationId = convId,
+                                content = currentAssistantMessage.toString(),
+                                reasoning = currentReasoning.toString().takeIf { it.isNotEmpty() }
+                            )
+                        }
                     }
                 }
             }
