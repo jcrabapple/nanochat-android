@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![screenshot 1](screenshot-01_10, 09_42_27 PM.jpg)
+! [screenshot 1](screenshot-01_10, 09_42_27 PM.jpg)
 
 **Native Android companion app for [nanochat](https://github.com/nanogpt-community/nanochat)**
 
