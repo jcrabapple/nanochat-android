@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![NanoChat](showcase.png)
+![NanoChat](1768098560030~2.jpg)
 
 **Native Android companion app for [nanochat](https://github.com/nanogpt-community/nanochat)**
 
