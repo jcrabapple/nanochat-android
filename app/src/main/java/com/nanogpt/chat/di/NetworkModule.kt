@@ -1,6 +1,7 @@
 package com.nanogpt.chat.di
 
 import android.util.Log
+import com.nanogpt.chat.BuildConfig
 import com.nanogpt.chat.data.local.SecureStorage
 import com.nanogpt.chat.data.remote.api.NanoChatApi
 import com.nanogpt.chat.data.remote.api.WebSearchApi
@@ -35,7 +36,12 @@ object NetworkModule {
     @Singleton
     fun provideLoggingInterceptor(): HttpLoggingInterceptor {
         return HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BODY
+            // Only log in debug builds to prevent sensitive data exposure in release
+            level = if (BuildConfig.DEBUG) {
+                HttpLoggingInterceptor.Level.BODY
+            } else {
+                HttpLoggingInterceptor.Level.NONE
+            }
         }
     }
 
@@ -56,7 +62,6 @@ object NetworkModule {
                 // The nanochat backend expects: Authorization: Bearer <api-key>
                 secureStorage.getSessionToken()?.let { token ->
                     requestBuilder.header("Authorization", "Bearer $token")
-                    Log.d("OkHttp", "Adding Authorization header: Bearer ${token.take(20)}...")
                 }
 
                 chain.proceed(requestBuilder.build())
