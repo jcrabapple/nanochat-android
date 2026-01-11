@@ -2,8 +2,6 @@
 
 <div align="center">
 
-![NanoChat](1768099097989~2.jpg)
-
 **Native Android companion app for [nanochat](https://github.com/nanogpt-community/nanochat)**
 
 A modern, full-featured Android client for the self-hostable nanochat AI chat platform.
