@@ -24,6 +24,8 @@ import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material.icons.outlined.ChatBubble
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.MessageCirclePlus
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -31,6 +33,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -146,6 +149,9 @@ fun ChatScreen(
         Scaffold(
             topBar = {
                 TopAppBar(
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = androidx.compose.ui.graphics.Color.Transparent
+                    ),
                     title = {
                         Column {
                             Text(
@@ -169,7 +175,7 @@ fun ChatScreen(
                         }) {
                             Icon(
                                 Icons.Default.Menu,
-                                contentDescription = "Menu",
+                                contentDescription = "Messages",
                                 tint = MaterialTheme.colorScheme.onSurface
                             )
                         }
@@ -203,22 +209,12 @@ fun ChatScreen(
                         IconButton(onClick = {
                             onNavigateToConversation(null)
                         }) {
-                            Box(
+                            Icon(
+                                Lucide.MessageCirclePlus,
+                                contentDescription = "New chat",
                                 modifier = Modifier.size(24.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    Icons.Filled.ChatBubble,
-                                    contentDescription = "New chat",
-                                    modifier = Modifier.size(24.dp)
-                                )
-                                Text(
-                                    text = "+",
-                                    color = MaterialTheme.colorScheme.onPrimary,
-                                    fontSize = 18.sp,
-                                    modifier = Modifier.padding(bottom = 4.dp)
-                                )
-                            }
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
                         }
                     }
                 )

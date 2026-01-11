@@ -130,6 +130,9 @@ dependencies {
     // Markdown
     implementation("com.mikepenz:multiplatform-markdown-renderer:0.15.0")
 
+    // Lucide Icons
+    implementation("com.composables:icons-lucide:1.0.0")
+
     // WebAuthn (Passkey)
     implementation("androidx.credentials:credentials:1.2.2")
     implementation("androidx.credentials:credentials-play-services-auth:1.2.2")
