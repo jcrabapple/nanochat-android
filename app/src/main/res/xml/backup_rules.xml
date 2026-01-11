@@ -1,5 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    Backup rules for NanoChat
+
+    EXCLUDES all SharedPreferences from backup to prevent sensitive data exposure:
+    - Session tokens (authentication credentials)
+    - User IDs and emails
+    - Backend URLs
+    - TTS/STT settings
+    - Theme preferences
+
+    Even though we use EncryptedSharedPreferences, excluding backups prevents:
+    1. Cloud exposure of encrypted data (reduces attack surface)
+    2. Token persistence beyond device lifecycle
+    3. Potential decryption attacks on backup files
+-->
 <full-backup-content>
-    <include domain="sharedpref" path="."/>
-    <exclude domain="sharedpref" path="device.xml"/>
+    <!-- Exclude all SharedPreferences from backup -->
+    <exclude domain="sharedpref" path="."/>
 </full-backup-content>

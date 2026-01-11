@@ -1,7 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    Data extraction rules for NanoChat (Android 12+)
+
+    EXCLUDES all SharedPreferences from cloud backup to prevent sensitive data exposure:
+    - Session tokens (authentication credentials)
+    - User IDs and emails
+    - Backend URLs
+    - TTS/STT settings
+    - Theme preferences
+
+    Even though we use EncryptedSharedPreferences, excluding backups prevents:
+    1. Cloud exposure of encrypted data (reduces attack surface)
+    2. Token persistence beyond device lifecycle
+    3. Potential decryption attacks on backup files
+
+    Note: Local device-to-device transfers (D2D) are also excluded for consistency.
+-->
 <data-extraction-rules>
     <cloud-backup>
-        <include domain="sharedpref" path="."/>
-        <exclude domain="sharedpref" path="device.xml"/>
+        <!-- Exclude all SharedPreferences from cloud backup -->
+        <exclude domain="sharedpref" path="."/>
     </cloud-backup>
+    <device-transfer>
+        <!-- Exclude all SharedPreferences from device transfer -->
+        <exclude domain="sharedpref" path="."/>
+    </device-transfer>
 </data-extraction-rules>
