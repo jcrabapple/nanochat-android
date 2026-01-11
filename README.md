@@ -1,4 +1,4 @@
-# nanochat-android
+# NanoChat for Android
 
 <div align="center">
 
