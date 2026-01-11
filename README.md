@@ -16,38 +16,24 @@ A modern, full-featured Android client for the self-hostable nanochat AI chat pl
 - **Markdown rendering** with support for code blocks, tables, and formatting
 - **Message history** with persistent local storage (Room database)
 - **Search conversations** quickly with integrated search
-- **Pin important conversations** for easy access
-- **Delete conversations** with swipe or button
+- **Delete conversations** with a long press
 
 ### AI Model Integration
 - **Multiple model support** with easy model selector
 - **Web search integration** with multiple providers (Linkup, Tavily, Exa, Kagi)
-- **Vision support** for image inputs
 - **Model benchmarks** display token usage and costs
-
-### Assistants & Projects
-- **Custom assistants** creation and management
-- **Project organization** for grouping conversations
-- **Assistant instructions** and configuration
-- **Model selection** per assistant/project
 
 ### Settings & Customization
 - **Account settings** with privacy controls
-- **Privacy mode** to hide personal information
 - **Context memory** for compressing long conversations
-- **Persistent memory** for cross-conversation facts
 - **Content processing** options (YouTube transcripts, web scraping, follow-up questions)
 - **Model preferences** for chat titles and follow-up questions
-- **TTS/STT settings** for voice input and output
 
 ### User Interface
 - **Material 3 design** with modern aesthetics
 - **Navigation drawer** with conversation list and quick actions
-- **Circular avatars** for visual conversation identification
 - **Rounded search input** with real-time filtering
-- **Icon-based navigation** for Assistants, Projects, and Settings
 - **Dark/Light theme** support
-- **Proper back button** handling throughout the app
 
 ### Technical Features
 - **Offline access** to cached conversations
@@ -57,15 +43,6 @@ A modern, full-featured Android client for the self-hostable nanochat AI chat pl
 - **HTTP streaming** with OkHttp
 - **Dependency injection** with Hilt
 - **MVVM architecture** with clean separation of concerns
-
-## Screenshots
-
-The app features a clean, modern Material 3 interface:
-- Rounded cards with surface colors
-- Circular avatars with primary container backgrounds
-- Compact spacing for efficient use of screen space
-- Icon-only bottom navigation for Assistants, Projects, and Settings
-- Full-width "New Chat" button with rounded corners
 
 ## Backend Integration
 
