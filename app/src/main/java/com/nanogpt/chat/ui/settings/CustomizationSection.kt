@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import com.nanogpt.chat.ui.theme.ThemeChoice
 import com.nanogpt.chat.ui.theme.ThemeManager
 import com.nanogpt.chat.ui.theme.getCatppuccinColorScheme
+import com.nanogpt.chat.ui.theme.getTokyoNightColorScheme
 
 /**
  * Customization section for theme settings.
@@ -176,7 +177,19 @@ private fun ThemeCard(
     onClick: () -> Unit
 ) {
     val colorScheme = getCatppuccinColorScheme(theme)
-    val isMaterialYou = colorScheme == null
+    val tokyoNightScheme = getTokyoNightColorScheme(theme)
+    val isMaterialYou = colorScheme == null && tokyoNightScheme == null
+
+    val themeDescription = when {
+        isMaterialYou -> "Dynamic colors from wallpaper"
+        tokyoNightScheme != null -> when (theme) {
+            ThemeChoice.TOKYO_NIGHT_LIGHT -> "Clean light theme inspired by Tokyo at dawn"
+            ThemeChoice.TOKYO_NIGHT -> "Dark theme with vibrant neon accents"
+            ThemeChoice.TOKYO_NIGHT_STORM -> "Deep blue-gray stormy night aesthetic"
+            else -> "Tokyo Night color palette"
+        }
+        else -> "Pastel color palette with soft aesthetics"
+    }
 
     Card(
         modifier = Modifier
@@ -212,16 +225,26 @@ private fun ThemeCard(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     modifier = Modifier.weight(1f)
                 ) {
-                    if (isMaterialYou) {
-                        // Material You indicator
-                        MaterialYouPreview(isDark = theme.isDark)
-                    } else {
-                        // Catppuccin color swatches
-                        colorScheme?.let { scheme ->
-                            ColorSwatch(scheme.primary)
-                            ColorSwatch(scheme.secondary)
-                            ColorSwatch(scheme.tertiary)
-                            ColorSwatch(scheme.surface)
+                    when {
+                        isMaterialYou -> {
+                            // Material You indicator
+                            MaterialYouPreview(isDark = theme.isDark)
+                        }
+                        tokyoNightScheme != null -> {
+                            // Tokyo Night color swatches
+                            ColorSwatch(tokyoNightScheme.primary)
+                            ColorSwatch(tokyoNightScheme.secondary)
+                            ColorSwatch(tokyoNightScheme.tertiary)
+                            ColorSwatch(tokyoNightScheme.surface)
+                        }
+                        else -> {
+                            // Catppuccin color swatches
+                            colorScheme?.let { scheme ->
+                                ColorSwatch(scheme.primary)
+                                ColorSwatch(scheme.secondary)
+                                ColorSwatch(scheme.tertiary)
+                                ColorSwatch(scheme.surface)
+                            }
                         }
                     }
                 }
@@ -233,7 +256,7 @@ private fun ThemeCard(
                         fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium
                     )
                     Text(
-                        text = if (isMaterialYou) "Dynamic colors from wallpaper" else "Catppuccin color palette",
+                        text = themeDescription,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

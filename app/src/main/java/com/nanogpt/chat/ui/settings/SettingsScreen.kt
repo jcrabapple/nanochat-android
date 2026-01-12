@@ -25,7 +25,6 @@ import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.DeveloperMode
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Palette
@@ -43,6 +42,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -65,6 +66,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -85,10 +87,10 @@ enum class SettingsSection(
     ASSISTANTS("Assistants", "Manage your AI assistants", Icons.Default.Psychology),
     CUSTOMIZATION("Customization", "Appearance and behavior", Icons.Default.Palette),
     MODELS("Models", "Manage your favorite models", Icons.Default.SmartToy),
-    API_KEYS("API Keys", "Manage your API keys", Icons.Default.Key),
+    NANO_GPT_API("NanoGPT API", "Balance and subscription usage", Icons.Default.Key),
     ANALYTICS("Analytics", "Usage statistics and insights", Icons.Default.BarChart),
     STARRED("Starred", "Starred messages and conversations", Icons.Default.Star),
-    DEVELOPER("Developer", "Advanced settings and tools", Icons.Default.DeveloperMode)
+    ABOUT("About", "App information and credits", Icons.Default.Info)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -292,6 +294,13 @@ fun SettingsDetailScreen(
                 SettingsSection.MODELS -> ModelsSection(
                     viewModel = viewModel
                 )
+                SettingsSection.NANO_GPT_API -> NanoGptApiSection(
+                    viewModel = viewModel
+                )
+                SettingsSection.ANALYTICS -> AnalyticsSection(
+                    viewModel = viewModel
+                )
+                SettingsSection.ABOUT -> AboutSection()
                 else -> PlaceholderSection(section.displayName)
             }
         }
@@ -452,6 +461,879 @@ fun AccountSection(
                     Text("OK")
                 }
             }
+        )
+    }
+}
+
+@Composable
+fun AnalyticsSection(
+    viewModel: SettingsViewModel = hiltViewModel()
+) {
+    val uiState by viewModel.uiState.collectAsState()
+
+    // Fetch data when screen first loads
+    LaunchedEffect(Unit) {
+        viewModel.fetchModelPerformance()
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // Description
+        Text(
+            text = "View your model usage statistics and performance metrics.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        // Action buttons
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Button(
+                onClick = { viewModel.fetchModelPerformance() },
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(
+                    Icons.Default.BarChart,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Refresh")
+            }
+            Button(
+                onClick = { viewModel.fetchModelPerformance(recalculate = true) },
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.secondary
+                )
+            ) {
+                Icon(
+                    Icons.Default.SmartToy,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Recalculate")
+            }
+        }
+
+        // Loading state
+        if (uiState.isLoadingModelPerformance) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(32.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator()
+            }
+        }
+
+        // Error state
+        uiState.modelPerformanceError?.let { error ->
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer
+                )
+            ) {
+                Text(
+                    text = error,
+                    modifier = Modifier.padding(16.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer
+                )
+            }
+        }
+
+        // Overall Stats section
+        if (uiState.overallStats != null && uiState.modelPerformance.isNotEmpty()) {
+            OverallStatsCard(
+                stats = uiState.overallStats!!,
+                modelPerformance = uiState.modelPerformance
+            )
+        }
+
+        // Model performance cards
+        if (uiState.modelPerformance.isNotEmpty()) {
+            Text(
+                text = "Model Performance (${uiState.modelPerformance.size} models)",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+
+            uiState.modelPerformance.forEach { stats ->
+                EnhancedModelPerformanceCard(stats = stats)
+            }
+        } else if (!uiState.isLoadingModelPerformance && uiState.modelPerformanceError == null) {
+            // Empty state
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        Icons.Default.BarChart,
+                        contentDescription = null,
+                        modifier = Modifier.size(48.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "No model performance data available",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "Start conversations with models to see statistics here",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun OverallStatsCard(
+    stats: com.nanogpt.chat.data.remote.dto.OverallStatsDto,
+    modelPerformance: List<com.nanogpt.chat.data.remote.dto.ModelPerformanceStatsDto>
+) {
+    // In Material You, primaryContainer has opposite brightness to the theme
+    // If container is light → dark theme → use white text
+    // If container is dark → light theme → use black text
+    val containerIsDark = isDarkColor(MaterialTheme.colorScheme.primaryContainer)
+    val useWhiteText = !containerIsDark  // Invert: light container = dark theme = white text
+    val textColor = if (useWhiteText) Color.White else Color.Black
+    val iconTint = if (useWhiteText) Color.White else Color.Black
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Header
+            Text(
+                text = "Overall Stats",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = textColor
+            )
+
+            // Stats grid - 2 columns
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Total Messages
+                OverallStatItem(
+                    label = "Total Messages",
+                    value = stats.totalMessages.toString(),
+                    textColor = textColor,
+                    modifier = Modifier.weight(1f)
+                )
+
+                // Total Cost
+                OverallStatItem(
+                    label = "Total Cost",
+                    value = "$${String.format("%.4f", stats.totalCost)}",
+                    textColor = textColor,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            // Top models section
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "Top Models",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = textColor,
+                    fontWeight = FontWeight.SemiBold
+                )
+
+                // Most Used Model
+                stats.mostUsedModel?.let { modelId ->
+                    val model = modelPerformance.find { it.modelId == modelId }
+                    val percentage = if (stats.totalMessages > 0) {
+                        (model?.totalMessages ?: 0) * 100 / stats.totalMessages
+                    } else 0
+                    TopModelRow(
+                        icon = Icons.Default.SmartToy,
+                        label = "Most Used",
+                        modelId = modelId,
+                        subtitle = "$percentage%",
+                        textColor = textColor,
+                        iconTint = iconTint
+                    )
+                } ?: TopModelRow(
+                    icon = Icons.Default.SmartToy,
+                    label = "Most Used",
+                    modelId = "N/A",
+                    subtitle = null,
+                    textColor = textColor,
+                    iconTint = iconTint
+                )
+
+                // Best Rated Model
+                stats.bestRatedModel?.let { modelId ->
+                    TopModelRow(
+                        icon = Icons.Default.Star,
+                        label = "Best Rated",
+                        modelId = modelId,
+                        subtitle = null,
+                        textColor = textColor,
+                        iconTint = iconTint
+                    )
+                } ?: TopModelRow(
+                    icon = Icons.Default.Star,
+                    label = "Best Rated",
+                    modelId = "N/A",
+                    subtitle = null,
+                    textColor = textColor,
+                    iconTint = iconTint
+                )
+
+                // Most Cost Effective
+                stats.mostCostEffective?.let { modelId ->
+                    TopModelRow(
+                        icon = Icons.Default.Info,
+                        label = "Most Cost Effective",
+                        modelId = modelId,
+                        subtitle = null,
+                        textColor = textColor,
+                        iconTint = iconTint
+                    )
+                } ?: TopModelRow(
+                    icon = Icons.Default.Info,
+                    label = "Most Cost Effective",
+                    modelId = "N/A",
+                    subtitle = null,
+                    textColor = textColor,
+                    iconTint = iconTint
+                )
+
+                // Fastest Model
+                stats.fastestModel?.let { modelId ->
+                    val model = modelPerformance.find { it.modelId == modelId }
+                    TopModelRow(
+                        icon = Icons.Default.Psychology,
+                        label = "Fastest",
+                        modelId = modelId,
+                        subtitle = if (model != null && model.avgResponseTime > 0) {
+                            "${model.avgResponseTime.toInt()}ms"
+                        } else null,
+                        textColor = textColor,
+                        iconTint = iconTint
+                    )
+                } ?: TopModelRow(
+                    icon = Icons.Default.Psychology,
+                    label = "Fastest",
+                    modelId = "N/A",
+                    subtitle = null,
+                    textColor = textColor,
+                    iconTint = iconTint
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun OverallStatItem(
+    label: String,
+    value: String,
+    textColor: Color,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.Start,
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = textColor
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            color = textColor
+        )
+    }
+}
+
+@Composable
+fun TopModelRow(
+    icon: ImageVector,
+    label: String,
+    modelId: String,
+    subtitle: String?,
+    textColor: Color,
+    iconTint: Color
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            modifier = Modifier.size(20.dp),
+            tint = iconTint
+        )
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = textColor
+            )
+            Text(
+                text = modelId,
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Medium,
+                color = textColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        subtitle?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.labelSmall,
+                color = textColor
+            )
+        }
+    }
+}
+
+// Helper function to determine if a color is dark based on luminance
+fun isDarkColor(color: Color): Boolean {
+    val luminance = (0.299 * color.red + 0.587 * color.green + 0.114 * color.blue)
+    return luminance < 0.5f
+}
+
+@Composable
+fun EnhancedModelPerformanceCard(stats: com.nanogpt.chat.data.remote.dto.ModelPerformanceStatsDto) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // Model ID header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.SmartToy,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Text(
+                        text = stats.modelId,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+
+            // Divider
+            HorizontalDivider(
+                modifier = Modifier.padding(vertical = 4.dp),
+                color = MaterialTheme.colorScheme.outlineVariant
+            )
+
+            // Main stats row - 3 columns
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                StatColumn(
+                    label = "Messages",
+                    value = stats.totalMessages.toString(),
+                    modifier = Modifier.weight(1f)
+                )
+                StatColumn(
+                    label = "Avg Rating",
+                    value = if (stats.avgRating != null) String.format("%.1f", stats.avgRating) else "N/A",
+                    modifier = Modifier.weight(1f)
+                )
+                StatColumn(
+                    label = "Total Cost",
+                    value = "$${String.format("%.4f", stats.totalCost)}",
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            // Second stats row - 3 columns
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                StatColumn(
+                    label = "Avg Tokens",
+                    value = String.format("%.0f", stats.avgTokens),
+                    modifier = Modifier.weight(1f)
+                )
+                StatColumn(
+                    label = "Avg Time",
+                    value = if (stats.avgResponseTime > 0) "${stats.avgResponseTime.toInt()}ms" else "N/A",
+                    modifier = Modifier.weight(1f)
+                )
+                StatColumn(
+                    label = "Regenerates",
+                    value = stats.regenerateCount.toString(),
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            // Third stats row - thumbs up/down
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                StatColumn(
+                    label = "Thumbs Up",
+                    value = stats.thumbsUpCount.toString(),
+                    modifier = Modifier.weight(1f)
+                )
+                StatColumn(
+                    label = "Thumbs Down",
+                    value = stats.thumbsDownCount.toString(),
+                    modifier = Modifier.weight(1f)
+                )
+                StatColumn(
+                    label = "Errors",
+                    value = stats.errorCount.toString(),
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            // Tags row for feedback counts
+            if (stats.accurateCount > 0 || stats.helpfulCount > 0 ||
+                stats.creativeCount > 0 || stats.fastCount > 0 || stats.costEffectiveCount > 0) {
+                HorizontalDivider(
+                    modifier = Modifier.padding(vertical = 4.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant
+                )
+
+                Text(
+                    text = "Feedback Tags",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (stats.accurateCount > 0) {
+                        FeedbackChip(label = "Accurate", count = stats.accurateCount)
+                    }
+                    if (stats.helpfulCount > 0) {
+                        FeedbackChip(label = "Helpful", count = stats.helpfulCount)
+                    }
+                    if (stats.creativeCount > 0) {
+                        FeedbackChip(label = "Creative", count = stats.creativeCount)
+                    }
+                    if (stats.fastCount > 0) {
+                        FeedbackChip(label = "Fast", count = stats.fastCount)
+                    }
+                    if (stats.costEffectiveCount > 0) {
+                        FeedbackChip(label = "Cost Effective", count = stats.costEffectiveCount)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun FeedbackChip(label: String, count: Int) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.secondaryContainer
+    ) {
+        Text(
+            text = "$label ($count)",
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSecondaryContainer
+        )
+    }
+}
+
+@Composable
+fun StatColumn(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.Start,
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary
+        )
+    }
+}
+
+@Composable
+fun AboutSection() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+    val versionName = packageInfo.versionName
+    val versionCode = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+        packageInfo.longVersionCode.toString()
+    } else {
+        @Suppress("DEPRECATION")
+        packageInfo.versionCode.toString()
+    }
+
+    // Determine text color based on theme (same logic as Overall Stats)
+    val containerIsDark = isDarkColor(MaterialTheme.colorScheme.primaryContainer)
+    val useWhiteText = !containerIsDark
+    val textColor = if (useWhiteText) Color.White else Color.Black
+    val subtitleColor = if (useWhiteText) Color.White.copy(alpha = 0.7f) else Color.Black.copy(alpha = 0.7f)
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // App Icon and Name
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer
+            )
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // App Icon
+                androidx.compose.foundation.Image(
+                    painter = androidx.compose.ui.res.painterResource(com.nanogpt.chat.R.mipmap.ic_launcher),
+                    contentDescription = "App Icon",
+                    modifier = Modifier.size(80.dp)
+                )
+
+                Text(
+                    text = "NanoChat Mobile",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = textColor
+                )
+
+                Text(
+                    text = "Version $versionName ($versionCode)",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = subtitleColor
+                )
+
+                Text(
+                    text = "Native Android companion app for NanoChat",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = subtitleColor
+                )
+            }
+        }
+
+        // Description Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "About",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+
+                Text(
+                    text = "NanoChat Mobile is a native Android application that provides a modern, responsive interface for the self-hostable NanoChat backend. Chat with AI models, manage conversations, and customize your experience with beautiful themes including Material You and Catppuccin.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        // Features Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "Features",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FeatureItem(
+                        icon = Icons.Default.Psychology,
+                        title = "Multiple AI Models",
+                        description = "Chat with various AI models including GPT, Claude, Gemini, and more"
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    FeatureItem(
+                        icon = Icons.Default.Palette,
+                        title = "Beautiful Themes",
+                        description = "Material You dynamic colors and Catppuccin color schemes"
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    FeatureItem(
+                        icon = Icons.Default.BarChart,
+                        title = "Analytics & Insights",
+                        description = "Track your usage statistics and model performance"
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    FeatureItem(
+                        icon = Icons.Default.AccountCircle,
+                        title = "Assistants & Projects",
+                        description = "Organize conversations with custom AI assistants and projects"
+                    )
+                }
+            }
+        }
+
+        // Links Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "Links",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+
+                LinkItem(
+                    icon = Icons.Default.Code,
+                    title = "GitHub Repository",
+                    subtitle = "Source code and issues",
+                    onClick = {
+                        val intent = android.content.Intent(
+                            android.content.Intent.ACTION_VIEW,
+                            android.net.Uri.parse("https://github.com/nanogpt-community/nanochat-mobile")
+                        )
+                        context.startActivity(intent)
+                    }
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                LinkItem(
+                    icon = Icons.Default.Info,
+                    title = "NanoChat Backend",
+                    subtitle = "Self-hostable backend server",
+                    onClick = {
+                        val intent = android.content.Intent(
+                            android.content.Intent.ACTION_VIEW,
+                            android.net.Uri.parse("https://github.com/nanogpt-community/nanochat")
+                        )
+                        context.startActivity(intent)
+                    }
+                )
+            }
+        }
+
+        // Credits Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "Technologies",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+
+                Text(
+                    text = "Built with Kotlin, Jetpack Compose, Material 3, Hilt, and Retrofit.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        // Copyright
+        Text(
+            text = "© 2025 NanoChat Community",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.fillMaxWidth(),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
+    }
+}
+
+@Composable
+fun FeatureItem(
+    icon: ImageVector,
+    title: String,
+    description: String
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            modifier = Modifier.size(24.dp),
+            tint = MaterialTheme.colorScheme.primary
+        )
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+fun LinkItem(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            modifier = Modifier.size(24.dp),
+            tint = MaterialTheme.colorScheme.primary
+        )
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Icon(
+            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = "Open link",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
@@ -1883,5 +2765,331 @@ fun PricingItem(label: String, value: String, roundToDecimals: Boolean = false) 
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontWeight = FontWeight.SemiBold
         )
+    }
+}
+
+@Composable
+fun NanoGptApiSection(
+    viewModel: SettingsViewModel = hiltViewModel()
+) {
+    val uiState by viewModel.uiState.collectAsState()
+
+    // Fetch data when screen first loads
+    LaunchedEffect(Unit) {
+        viewModel.fetchNanoGptData()
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // Description
+        Text(
+            text = "View your NanoGPT API balance and subscription usage.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        // Refresh button
+        Button(
+            onClick = { viewModel.fetchNanoGptData() },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Icon(
+                Icons.Default.SmartToy,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Refresh Data")
+        }
+
+        // Loading state
+        if (uiState.isLoadingNanoGpt) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(32.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator()
+            }
+        }
+
+        // Error state
+        uiState.nanoGptError?.let { error ->
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer
+                )
+            ) {
+                Text(
+                    text = error,
+                    modifier = Modifier.padding(16.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer
+                )
+            }
+        }
+
+        // Balance section
+        uiState.nanoGptBalance?.let { balance ->
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "Account Balance",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+
+                    // USD Balance
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "USD Balance",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "$${balance.usd_balance}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+
+                    // NANO Balance
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "NANO Balance",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "${balance.nano_balance} NANO",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+
+                    // Deposit Address
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "Deposit Address",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = balance.nanoDepositAddress,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState())
+                        )
+                    }
+                }
+            }
+        }
+
+        // Subscription section
+        uiState.nanoGptSubscription?.let { sub ->
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    // Header with status
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Subscription",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Surface(
+                            color = if (sub.active) {
+                                MaterialTheme.colorScheme.primaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.errorContainer
+                            },
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Text(
+                                text = if (sub.active) "Active" else "Inactive",
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (sub.active) {
+                                    MaterialTheme.colorScheme.onPrimaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.onErrorContainer
+                                }
+                            )
+                        }
+                    }
+
+                    // Daily usage
+                    UsageCard(
+                        title = "Daily Usage",
+                        used = sub.daily.used,
+                        remaining = sub.daily.remaining,
+                        total = sub.limits.daily,
+                        percentUsed = sub.daily.percentUsed,
+                        resetAt = sub.daily.resetAt
+                    )
+
+                    // Monthly usage
+                    UsageCard(
+                        title = "Monthly Usage",
+                        used = sub.monthly.used,
+                        remaining = sub.monthly.remaining,
+                        total = sub.limits.monthly,
+                        percentUsed = sub.monthly.percentUsed,
+                        resetAt = sub.monthly.resetAt
+                    )
+
+                    // Period end date
+                    Text(
+                        text = "Period ends: ${formatDate(sub.period.currentPeriodEnd)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    // Overage info
+                    if (sub.allowOverage) {
+                        Text(
+                            text = "Overage allowed",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun UsageCard(
+    title: String,
+    used: Int,
+    remaining: Int,
+    total: Int,
+    percentUsed: Double,
+    resetAt: Long
+) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold
+        )
+
+        // Progress bar
+        LinearProgressIndicator(
+            progress = { percentUsed.toFloat() },
+            modifier = Modifier.fillMaxWidth(),
+            color = if (percentUsed > 0.9) {
+                MaterialTheme.colorScheme.error
+            } else if (percentUsed > 0.7) {
+                MaterialTheme.colorScheme.tertiary
+            } else {
+                MaterialTheme.colorScheme.primary
+            }
+        )
+
+        // Stats row
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = "$used / $total",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = "${(percentUsed * 100).toInt()}%",
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.SemiBold,
+                color = if (percentUsed > 0.9) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                }
+            )
+        }
+
+        // Reset time
+        Text(
+            text = "Resets: ${formatTimestamp(resetAt)}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+fun formatDate(dateString: String): String {
+    return try {
+        val inputFormat = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US)
+        inputFormat.timeZone = java.util.TimeZone.getTimeZone("UTC")
+        val date = inputFormat.parse(dateString)
+        val outputFormat = java.text.SimpleDateFormat("MMMM d, yyyy", java.util.Locale.US)
+        outputFormat.format(date)
+    } catch (e: Exception) {
+        dateString
+    }
+}
+
+fun formatTimestamp(timestamp: Long): String {
+    val resetDate = java.util.Date(timestamp)
+    val now = java.util.Date()
+    val diff = resetDate.time - now.time
+
+    val hours = diff / (1000 * 60 * 60)
+    val minutes = (diff % (1000 * 60 * 60)) / (1000 * 60)
+
+    return if (hours > 24) {
+        val days = (hours / 24).toInt()
+        "$days day${if (days > 1) "s" else ""}"
+    } else if (hours > 0) {
+        "${hours.toInt()}h ${minutes.toInt()}m"
+    } else {
+        "${minutes.toInt()}m"
     }
 }

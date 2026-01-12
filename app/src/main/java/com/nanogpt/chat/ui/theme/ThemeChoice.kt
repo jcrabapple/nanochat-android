@@ -7,10 +7,13 @@ package com.nanogpt.chat.ui.theme
 enum class ThemeChoice(val displayName: String, val isDark: Boolean) {
     MATERIAL_YOU_LIGHT("Material You (Light)", false),
     LATTE("Catppuccin Latte", false),
+    TOKYO_NIGHT_LIGHT("Tokyo Night Light", false),
     MATERIAL_YOU_DARK("Material You (Dark)", true),
     FRAPPE("Catppuccin Frappé", true),
     MACCHIATO("Catppuccin Macchiato", true),
-    MOCHA("Catppuccin Mocha", true);
+    MOCHA("Catppuccin Mocha", true),
+    TOKYO_NIGHT("Tokyo Night", true),
+    TOKYO_NIGHT_STORM("Tokyo Night Storm", true);
 
     companion object {
         /**

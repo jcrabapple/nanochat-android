@@ -109,4 +109,18 @@ interface NanoChatApi {
     // ============== Karakeep Integration ==============
     @POST("/api/karakeep/save-chat")
     suspend fun saveChatToKarakeep(@Body request: SaveChatToKarakeepRequest): Response<SaveChatToKarakeepResponse>
+
+    // ============== NanoGPT API Balance ==============
+    @POST("/api/nano-gpt/balance")
+    suspend fun getNanoGptBalance(): Response<NanoGptBalanceDto>
+
+    // ============== NanoGPT Subscription Usage ==============
+    @GET("/api/nano-gpt/subscription-usage")
+    suspend fun getNanoGptSubscriptionUsage(): Response<NanoGptSubscriptionDto>
+
+    // ============== Model Performance Analytics ==============
+    @GET("/api/db/model-performance")
+    suspend fun getModelPerformance(
+        @Query("recalculate") recalculate: String? = null
+    ): Response<ModelPerformanceResponseDto>
 }

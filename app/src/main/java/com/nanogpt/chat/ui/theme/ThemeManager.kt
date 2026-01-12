@@ -78,10 +78,13 @@ class ThemeManager @Inject constructor(
                     tertiary = Pink40
                 )
             }
-            // Catppuccin themes
+            // Tokyo Night themes
             else -> {
+                // Try Tokyo Night first
+                getTokyoNightColorScheme(currentTheme) ?:
+                // Fall back to Catppuccin
                 getCatppuccinColorScheme(currentTheme) ?: run {
-                    // Fallback to default if something goes wrong
+                    // Final fallback to default if something goes wrong
                     if (isDark) {
                         androidx.compose.material3.darkColorScheme(
                             primary = NanoChatPrimary,
@@ -142,7 +145,6 @@ class ThemeManager @Inject constructor(
     @Composable
     fun getStatusBarColor(): Int {
         val isDark by isDarkMode.collectAsState()
-        val scheme = getAppColorScheme()
         return if (isDark) {
             android.graphics.Color.BLACK
         } else {

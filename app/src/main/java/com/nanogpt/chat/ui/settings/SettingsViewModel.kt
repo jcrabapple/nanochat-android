@@ -13,6 +13,8 @@ import com.nanogpt.chat.data.local.SecureStorage
 import com.nanogpt.chat.data.paging.ModelsPagingSource
 import com.nanogpt.chat.data.remote.api.NanoChatApi
 import com.nanogpt.chat.data.remote.dto.ModelDto
+import com.nanogpt.chat.data.remote.dto.NanoGptBalanceDto
+import com.nanogpt.chat.data.remote.dto.NanoGptSubscriptionDto
 import com.nanogpt.chat.data.remote.dto.SettingsUpdates
 import com.nanogpt.chat.data.remote.dto.UserSettingsDto
 import com.nanogpt.chat.data.remote.dto.parseUserModelsResponse
@@ -456,6 +458,112 @@ class SettingsViewModel @Inject constructor(
         fetchEnabledModelIds()
     }
 
+    fun fetchNanoGptData() {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoadingNanoGpt = true, nanoGptError = null)
+            try {
+                // Fetch balance
+                val balanceResponse = api.getNanoGptBalance()
+                val balance = if (balanceResponse.isSuccessful && balanceResponse.body() != null) {
+                    balanceResponse.body()
+                } else {
+                    null
+                }
+
+                // Fetch subscription
+                val subscriptionResponse = api.getNanoGptSubscriptionUsage()
+                val subscription = if (subscriptionResponse.isSuccessful && subscriptionResponse.body() != null) {
+                    subscriptionResponse.body()
+                } else {
+                    null
+                }
+
+                _uiState.value = _uiState.value.copy(
+                    nanoGptBalance = balance,
+                    nanoGptSubscription = subscription,
+                    isLoadingNanoGpt = false,
+                    nanoGptError = if (balance == null && subscription == null) {
+                        "Failed to load NanoGPT data"
+                    } else null
+                )
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isLoadingNanoGpt = false,
+                    nanoGptError = "Error: ${e.message}"
+                )
+            }
+        }
+    }
+
+    fun fetchModelPerformance(recalculate: Boolean = false) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoadingModelPerformance = true, modelPerformanceError = null)
+            try {
+                val response = api.getModelPerformance(
+                    recalculate = if (recalculate) "true" else null
+                )
+                if (response.isSuccessful && response.body() != null) {
+                    val stats = response.body()!!.stats
+
+                    // Calculate overall stats
+                    val totalMessages = stats.sumOf { it.totalMessages }
+                    val totalCost = stats.sumOf { it.totalCost }
+
+                    // Calculate weighted average rating (only for models that have ratings)
+                    val modelsWithRatings = stats.filter { it.avgRating != null }
+                    val avgRating = if (modelsWithRatings.isNotEmpty()) {
+                        modelsWithRatings.sumOf { (it.avgRating ?: 0.0) * it.totalMessages } / totalMessages
+                    } else null
+
+                    // Find most used model
+                    val mostUsedModel = stats.maxByOrNull { it.totalMessages }?.modelId
+
+                    // Find best rated model
+                    val bestRatedModel = stats
+                        .filter { it.avgRating != null && it.avgRating!! > 0 }
+                        .maxByOrNull { it.avgRating ?: 0.0 }?.modelId
+
+                    // Find most cost effective (lowest cost per message, must have at least 1 message)
+                    val mostCostEffective = stats
+                        .filter { it.totalMessages > 0 }
+                        .minByOrNull { it.totalCost / it.totalMessages }?.modelId
+
+                    // Find fastest model (lowest response time, must have at least 1 message)
+                    val fastestModel = stats
+                        .filter { it.totalMessages > 0 && it.avgResponseTime > 0 }
+                        .minByOrNull { it.avgResponseTime }?.modelId
+
+                    val overallStats = com.nanogpt.chat.data.remote.dto.OverallStatsDto(
+                        totalMessages = totalMessages,
+                        totalCost = totalCost,
+                        avgRating = avgRating,
+                        mostUsedModel = mostUsedModel,
+                        bestRatedModel = bestRatedModel,
+                        mostCostEffective = mostCostEffective,
+                        fastestModel = fastestModel
+                    )
+
+                    _uiState.value = _uiState.value.copy(
+                        modelPerformance = stats,
+                        overallStats = overallStats,
+                        isLoadingModelPerformance = false,
+                        modelPerformanceError = null
+                    )
+                } else {
+                    _uiState.value = _uiState.value.copy(
+                        isLoadingModelPerformance = false,
+                        modelPerformanceError = "Failed to load model performance: ${response.code()}"
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isLoadingModelPerformance = false,
+                    modelPerformanceError = "Error: ${e.message}"
+                )
+            }
+        }
+    }
+
     /**
      * Returns a Flow of PagingData for models with the given filter.
      * This uses the cached allModels list and applies the filter function.
@@ -492,5 +600,15 @@ data class SettingsUiState(
     val sttModel: String? = null,
     // Karakeep testing
     val isTestingKarakeep: Boolean = false,
-    val karakeepTestResult: String? = null
+    val karakeepTestResult: String? = null,
+    // NanoGPT API
+    val nanoGptBalance: NanoGptBalanceDto? = null,
+    val nanoGptSubscription: NanoGptSubscriptionDto? = null,
+    val isLoadingNanoGpt: Boolean = false,
+    val nanoGptError: String? = null,
+    // Model Performance Analytics
+    val modelPerformance: List<com.nanogpt.chat.data.remote.dto.ModelPerformanceStatsDto> = emptyList(),
+    val overallStats: com.nanogpt.chat.data.remote.dto.OverallStatsDto? = null,
+    val isLoadingModelPerformance: Boolean = false,
+    val modelPerformanceError: String? = null
 )
