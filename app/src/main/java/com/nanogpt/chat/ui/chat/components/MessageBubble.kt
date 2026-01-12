@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -87,7 +88,7 @@ fun MessageBubble(
         // Message bubble
         Column(
             modifier = Modifier
-                .fillMaxWidth()
+                .widthIn(max = 400.dp)
                 .clip(RoundedCornerShape(16.dp))
                 .background(
                     if (isUser) {
@@ -104,14 +105,12 @@ fun MessageBubble(
 
                 Column(
                     modifier = Modifier
-                        .fillMaxWidth()
                         .clip(RoundedCornerShape(8.dp))
                         .background(MaterialTheme.colorScheme.surface)
                 ) {
                     // Header row (clickable to toggle)
                     Row(
                         modifier = Modifier
-                            .fillMaxWidth()
                             .clickable { reasoningExpanded = !reasoningExpanded }
                             .padding(8.dp),
                         verticalAlignment = Alignment.CenterVertically

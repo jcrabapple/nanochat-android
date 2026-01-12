@@ -34,7 +34,13 @@ class AssistantRepository @Inject constructor(
         instructions: String,
         modelId: String,
         webSearchEnabled: Boolean,
-        webSearchProvider: String?
+        webSearchProvider: String?,
+        temperature: Double? = null,
+        topP: Double? = null,
+        maxTokens: Int? = null,
+        contextSize: Int? = null,
+        reasoningEffort: String? = null,
+        webSearchMode: String? = null
     ): Result<AssistantEntity> {
         return try {
             // Create locally first
@@ -46,6 +52,13 @@ class AssistantRepository @Inject constructor(
                 modelId = modelId,
                 webSearchEnabled = webSearchEnabled,
                 webSearchProvider = webSearchProvider,
+                icon = null,
+                temperature = temperature,
+                topP = topP,
+                maxTokens = maxTokens,
+                contextSize = contextSize,
+                reasoningEffort = reasoningEffort,
+                webSearchMode = webSearchMode,
                 createdAt = System.currentTimeMillis(),
                 updatedAt = System.currentTimeMillis(),
                 syncStatus = SyncStatus.PENDING
@@ -55,18 +68,34 @@ class AssistantRepository @Inject constructor(
 
             // Try to sync with server
             try {
+                // Map entity fields to DTO field names
+                val defaultWebSearchMode = if (webSearchEnabled) {
+                    webSearchMode ?: "standard"
+                } else {
+                    null
+                }
+
                 val response = api.createAssistant(
                     CreateAssistantRequest(
                         name = name,
                         description = description,
-                        instructions = instructions,
-                        modelId = modelId,
-                        webSearchEnabled = webSearchEnabled,
-                        webSearchProvider = webSearchProvider
+                        systemPrompt = instructions,  // Map: instructions -> systemPrompt
+                        defaultModelId = modelId,  // Map: modelId -> defaultModelId
+                        defaultWebSearchMode = defaultWebSearchMode,  // Map: webSearchEnabled + webSearchMode -> defaultWebSearchMode
+                        defaultWebSearchProvider = webSearchProvider,  // Map: webSearchProvider -> defaultWebSearchProvider
+                        icon = null,
+                        temperature = temperature,
+                        topP = topP,
+                        maxTokens = maxTokens,
+                        contextSize = contextSize,
+                        reasoningEffort = reasoningEffort
                     )
                 )
                 if (response.isSuccessful && response.body() != null) {
                     val dto = response.body()!!
+
+                    // Delete the local temporary assistant and insert/update with server data
+                    assistantDao.deleteAssistantById(localAssistant.id)
                     val serverAssistant = dto.toEntity()
                     assistantDao.insertAssistant(serverAssistant)
                     Result.success(serverAssistant)
@@ -88,7 +117,13 @@ class AssistantRepository @Inject constructor(
         instructions: String? = null,
         modelId: String? = null,
         webSearchEnabled: Boolean? = null,
-        webSearchProvider: String? = null
+        webSearchProvider: String? = null,
+        temperature: Double? = null,
+        topP: Double? = null,
+        maxTokens: Int? = null,
+        contextSize: Int? = null,
+        reasoningEffort: String? = null,
+        webSearchMode: String? = null
     ): Result<Unit> {
         return try {
             val existing = assistantDao.getAssistantById(id)
@@ -100,6 +135,12 @@ class AssistantRepository @Inject constructor(
                     modelId = modelId ?: existing.modelId,
                     webSearchEnabled = webSearchEnabled ?: existing.webSearchEnabled,
                     webSearchProvider = webSearchProvider ?: existing.webSearchProvider,
+                    temperature = temperature,
+                    topP = topP,
+                    maxTokens = maxTokens,
+                    contextSize = contextSize,
+                    reasoningEffort = reasoningEffort,
+                    webSearchMode = webSearchMode,
                     updatedAt = System.currentTimeMillis(),
                     syncStatus = SyncStatus.PENDING
                 )
@@ -148,14 +189,26 @@ class AssistantRepository @Inject constructor(
 // Extension function to convert DTO to Entity
 fun AssistantDto.toEntity(): AssistantEntity {
     val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.getDefault())
+
+    // Map: defaultWebSearchMode -> webSearchEnabled + webSearchMode
+    val webSearchEnabled = defaultWebSearchMode != null && defaultWebSearchMode != "off"
+    val webSearchMode = if (defaultWebSearchMode == "off") null else defaultWebSearchMode
+
     return AssistantEntity(
         id = id,
         name = name,
         description = description,
-        instructions = instructions,
-        modelId = modelId,
-        webSearchEnabled = webSearchEnabled,
-        webSearchProvider = webSearchProvider,
+        instructions = systemPrompt,  // Map: systemPrompt -> instructions
+        modelId = defaultModelId ?: "gpt-4o-mini",  // Map: defaultModelId -> modelId
+        webSearchEnabled = webSearchEnabled,  // Map: defaultWebSearchMode -> webSearchEnabled
+        webSearchProvider = defaultWebSearchProvider,  // Map: defaultWebSearchProvider -> webSearchProvider
+        icon = icon,
+        temperature = temperature,
+        topP = topP,
+        maxTokens = maxTokens,
+        contextSize = contextSize,
+        reasoningEffort = reasoningEffort,
+        webSearchMode = webSearchMode,  // Map: defaultWebSearchMode -> webSearchMode
         createdAt = sdf.parse(createdAt)?.time ?: System.currentTimeMillis(),
         updatedAt = sdf.parse(updatedAt)?.time ?: System.currentTimeMillis(),
         syncStatus = SyncStatus.SYNCED

@@ -12,8 +12,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -23,13 +26,17 @@ import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeveloperMode
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -53,14 +60,18 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.activity.compose.BackHandler
+import androidx.paging.compose.*
 
 /**
  * Enum representing all settings sections
@@ -84,7 +95,8 @@ enum class SettingsSection(
 @Composable
 fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
-    onNavigateBack: () -> Unit = {}
+    onNavigateBack: () -> Unit = {},
+    onNavigateToAssistants: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var selectedSection by remember { mutableStateOf<SettingsSection?>(null) }
@@ -95,7 +107,8 @@ fun SettingsScreen(
             section = selectedSection!!,
             viewModel = viewModel,
             settings = uiState.settings,
-            onNavigateBack = { selectedSection = null }
+            onNavigateBack = { selectedSection = null },
+            onNavigateToAssistants = onNavigateToAssistants
         )
     } else {
         // Main settings list screen
@@ -241,7 +254,8 @@ fun SettingsDetailScreen(
     section: SettingsSection,
     viewModel: SettingsViewModel,
     settings: com.nanogpt.chat.data.remote.dto.UserSettingsDto?,
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    onNavigateToAssistants: () -> Unit = {}
 ) {
     // Handle Android back button/gesture
     BackHandler(onBack = onNavigateBack)
@@ -269,8 +283,14 @@ fun SettingsDetailScreen(
                     viewModel = viewModel,
                     settings = settings
                 )
+                SettingsSection.ASSISTANTS -> AssistantsSection(
+                    onNavigateToAssistants = onNavigateToAssistants
+                )
                 SettingsSection.CUSTOMIZATION -> CustomizationSection(
                     themeManager = viewModel.themeManager
+                )
+                SettingsSection.MODELS -> ModelsSection(
+                    viewModel = viewModel
                 )
                 else -> PlaceholderSection(section.displayName)
             }
@@ -345,7 +365,7 @@ fun AccountSection(
             ModelPreferencesSettings(
                 chatTitleModel = settings.titleModelId,
                 followUpQuestionsModel = settings.followUpModelId,
-                userModels = uiState.userModels,
+                models = uiState.allModels,
                 onChatTitleModelChange = { viewModel.updateChatTitleModel(it) },
                 onFollowUpQuestionsModelChange = { viewModel.updateFollowUpQuestionsModel(it) }
             )
@@ -544,7 +564,7 @@ fun ContentProcessingSettings(
 fun ModelPreferencesSettings(
     chatTitleModel: String?,
     followUpQuestionsModel: String?,
-    userModels: List<com.nanogpt.chat.data.remote.dto.UserModelDto>,
+    models: List<com.nanogpt.chat.data.remote.dto.ModelDto>,
     onChatTitleModelChange: (String?) -> Unit,
     onFollowUpQuestionsModelChange: (String?) -> Unit
 ) {
@@ -592,11 +612,11 @@ fun ModelPreferencesSettings(
                         }
                     )
                     // User models
-                    userModels.forEach { model ->
+                    models.forEach { model ->
                         DropdownMenuItem(
-                            text = { Text(model.modelId) },
+                            text = { Text(model.name) },
                             onClick = {
-                                onChatTitleModelChange(model.modelId)
+                                onChatTitleModelChange(model.id)
                                 chatTitleExpanded = false
                             }
                         )
@@ -649,11 +669,11 @@ fun ModelPreferencesSettings(
                         }
                     )
                     // User models
-                    userModels.forEach { model ->
+                    models.forEach { model ->
                         DropdownMenuItem(
-                            text = { Text(model.modelId) },
+                            text = { Text(model.name) },
                             onClick = {
-                                onFollowUpQuestionsModelChange(model.modelId)
+                                onFollowUpQuestionsModelChange(model.id)
                                 followUpExpanded = false
                             }
                         )
@@ -1167,6 +1187,701 @@ fun SettingSwitch(
         Switch(
             checked = checked,
             onCheckedChange = onCheckedChange
+        )
+    }
+}
+
+@Composable
+fun AssistantsSection(
+    onNavigateToAssistants: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // Description
+        Text(
+            text = "Manage your AI assistants. Create custom assistants with specific instructions, models, and web search settings.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        // Assistant info cards
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer
+            )
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "What are Assistants?",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = "Assistants are AI personas with custom instructions and settings. You can create assistants for specific tasks like coding, writing, analysis, and more.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                )
+            }
+        }
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.secondaryContainer
+            )
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "Quick Selection",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = "Use the assistant icon in the chat sidebar to quickly switch between assistants without leaving the conversation.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
+                )
+            }
+        }
+
+        // Manage button
+        Button(
+            onClick = onNavigateToAssistants,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Icon(
+                Icons.Default.Psychology,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Manage Assistants")
+        }
+    }
+}
+
+enum class ModelFilter(val displayName: String) {
+    ENABLED("Enabled"),
+    ALL("All Models"),
+    SUBSCRIPTION("Subscription"),
+    IMAGE("Image"),
+    VIDEO("Video")
+}
+
+@Composable
+fun ModelsSection(
+    viewModel: SettingsViewModel = hiltViewModel()
+) {
+    val uiState by viewModel.uiState.collectAsState()
+    var selectedFilter by remember { mutableStateOf(ModelFilter.ENABLED) }
+    var searchQuery by remember { mutableStateOf("") }
+
+    // Build filter function based on selected filter and search query
+    val filterFunction: (com.nanogpt.chat.data.remote.dto.ModelDto) -> Boolean = remember(selectedFilter, searchQuery, uiState.enabledModelIds) {
+        { model ->
+            // Exclude image and video models from ALL and SUBSCRIPTION filters
+            val isImageOrVideoModel = model.capabilities.images || model.capabilities.video
+
+            // First apply the selected filter
+            val passesFilter = when (selectedFilter) {
+                ModelFilter.ENABLED -> model.id in uiState.enabledModelIds
+                ModelFilter.ALL -> !isImageOrVideoModel
+                ModelFilter.SUBSCRIPTION -> model.subscription?.included == true && !isImageOrVideoModel
+                ModelFilter.IMAGE -> model.capabilities.images
+                ModelFilter.VIDEO -> model.capabilities.video
+            }
+
+            // Then apply search filter if query is not blank
+            val passesSearch = searchQuery.isBlank() ||
+                model.name.contains(searchQuery, ignoreCase = true) ||
+                model.id.contains(searchQuery, ignoreCase = true) ||
+                (!model.description.isNullOrBlank() && model.description.contains(searchQuery, ignoreCase = true))
+
+            passesFilter && passesSearch
+        }
+    }
+
+    // Apply filter to all models (for initial load display)
+    val filteredModels = remember(selectedFilter, searchQuery, uiState.enabledModelIds) {
+        uiState.allModels.filter(filterFunction)
+    }
+
+    // Use regular Column for now to avoid nested scrolling
+    // In the future, we could restructure SettingsDetailScreen to use LazyColumn for MODELS section
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // Description
+        Column(
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = "Manage your AI models. Enable or disable models to control which ones appear in the model selector.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = "${filteredModels.size} models",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+
+        // Search bar
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = { searchQuery = it },
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text("Search models by name or description...") },
+            leadingIcon = {
+                Icon(
+                    Icons.Default.SmartToy,
+                    contentDescription = "Search"
+                )
+            },
+            trailingIcon = {
+                if (searchQuery.isNotEmpty()) {
+                    IconButton(onClick = { searchQuery = "" }) {
+                        Icon(Icons.Default.Delete, contentDescription = "Clear")
+                    }
+                }
+            },
+            singleLine = true
+        )
+
+        // Filter chips
+        FilterChipsRow(
+            selectedFilter = selectedFilter,
+            onFilterSelected = { selectedFilter = it }
+        )
+
+        // Models list
+        if (uiState.allModels.isEmpty()) {
+            // Loading
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(32.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(32.dp),
+                        strokeWidth = 2.dp
+                    )
+                    Text(
+                        text = "Loading models...",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        } else if (filteredModels.isEmpty()) {
+            // No models found
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(
+                        Icons.Default.SmartToy,
+                        contentDescription = null,
+                        modifier = Modifier.size(48.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = if (searchQuery.isNotBlank()) {
+                            "No models match \"$searchQuery\""
+                        } else {
+                            "No ${selectedFilter.displayName.lowercase()} found"
+                        },
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        } else {
+            // Display models (limit to first 50 for performance)
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                filteredModels.take(50).forEach { model ->
+                    EnhancedModelCard(
+                        model = model,
+                        onEnabledToggle = { viewModel.toggleModelEnabled(model) }
+                    )
+                }
+
+                if (filteredModels.size > 50) {
+                    // Show message about more models
+                    Text(
+                        text = "Showing first 50 of ${filteredModels.size} models. Use search to find specific models.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                }
+            }
+        }
+
+        // Refresh button
+        Button(
+            onClick = { viewModel.refreshModels() },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Icon(
+                Icons.Default.SmartToy,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Refresh Models")
+        }
+    }
+}
+
+// Helper function to infer provider from model ID
+fun inferProviderFromModelId(modelId: String): String {
+    return when {
+        modelId.startsWith("gpt", ignoreCase = true) -> "OpenAI"
+        modelId.startsWith("claude", ignoreCase = true) -> "Anthropic"
+        modelId.startsWith("gemini", ignoreCase = true) -> "Google"
+        modelId.contains("llama", ignoreCase = true) -> "Meta"
+        modelId.contains("mistral", ignoreCase = true) -> "Mistral"
+        modelId.contains("deepseek", ignoreCase = true) -> "DeepSeek"
+        modelId.contains("zhipu", ignoreCase = true) || modelId.contains("glm", ignoreCase = true) -> "Zhipu AI"
+        else -> "Other"
+    }
+}
+
+@Composable
+fun FilterChipsRow(
+    selectedFilter: ModelFilter,
+    onFilterSelected: (ModelFilter) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        ModelFilter.entries.forEach { filter ->
+            FilterChip(
+                selected = selectedFilter == filter,
+                onClick = { onFilterSelected(filter) },
+                label = { Text(filter.displayName) }
+            )
+        }
+    }
+}
+
+@Composable
+fun FilterChip(
+    selected: Boolean,
+    onClick: () -> Unit,
+    label: @Composable () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        modifier = Modifier,
+        shape = RoundedCornerShape(16.dp),
+        color = if (selected) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant
+        },
+        border = if (selected) {
+            null
+        } else {
+            androidx.compose.foundation.BorderStroke(
+                1.dp,
+                MaterialTheme.colorScheme.outlineVariant
+            )
+        }
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            label()
+        }
+    }
+}
+
+@Composable
+fun ModelCard(
+    model: com.nanogpt.chat.data.remote.dto.UserModelDto,
+    onEnabledToggle: () -> Unit,
+    onPinnedToggle: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (model.pinned) 4.dp else 1.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (model.pinned) {
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+            } else {
+                MaterialTheme.colorScheme.surface
+            }
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Provider icon or fallback
+            Surface(
+                modifier = Modifier.size(40.dp),
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.primaryContainer
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Default.SmartToy,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+
+            // Model info
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = model.modelId,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = if (model.pinned) FontWeight.SemiBold else FontWeight.Normal,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (model.pinned) {
+                        Icon(
+                            Icons.Default.Star,
+                            contentDescription = "Pinned",
+                            modifier = Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+                Text(
+                    text = model.provider.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            // Pin button
+            IconButton(
+                onClick = onPinnedToggle,
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    if (model.pinned) Icons.Default.Star else Icons.Default.Star,
+                    contentDescription = if (model.pinned) "Unpin" else "Pin",
+                    modifier = Modifier.size(20.dp),
+                    tint = if (model.pinned) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    }
+                )
+            }
+
+            // Enabled switch
+            Switch(
+                checked = model.enabled,
+                onCheckedChange = { onEnabledToggle() }
+            )
+        }
+    }
+}
+
+@Composable
+fun EnhancedModelCard(
+    model: com.nanogpt.chat.data.remote.dto.ModelDto,
+    onEnabledToggle: () -> Unit
+) {
+    var showInfoDialog by remember { mutableStateOf(false) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Provider icon
+            Surface(
+                modifier = Modifier.size(32.dp),
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.primaryContainer
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Default.SmartToy,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+
+            // Model info (compact)
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = model.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                // Capabilities badges (compact)
+                if (model.capabilities.vision || model.capabilities.reasoning ||
+                    model.capabilities.images || model.capabilities.video) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(3.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (model.capabilities.vision) {
+                            CapabilityBadge("V")
+                        }
+                        if (model.capabilities.reasoning) {
+                            CapabilityBadge("R")
+                        }
+                        if (model.capabilities.images) {
+                            CapabilityBadge("I")
+                        }
+                        if (model.capabilities.video) {
+                            CapabilityBadge("Vid")
+                        }
+                    }
+                }
+            }
+
+            // Info button
+            IconButton(
+                onClick = { showInfoDialog = true },
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    Icons.Default.Info,
+                    contentDescription = "Model Info",
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            // Enabled switch
+            Switch(
+                checked = model.enabled,
+                onCheckedChange = { onEnabledToggle() },
+                modifier = Modifier.size(40.dp, 24.dp)
+            )
+        }
+    }
+
+    // Info dialog
+    if (showInfoDialog) {
+        ModelInfoDialog(
+            model = model,
+            onDismiss = { showInfoDialog = false }
+        )
+    }
+}
+
+@Composable
+fun ModelInfoDialog(
+    model: com.nanogpt.chat.data.remote.dto.ModelDto,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(model.name)
+        },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Description
+                model.description?.let {
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+
+                // Model ID
+                Text(
+                    text = "ID: ${model.id}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+
+                // Capabilities
+                if (model.capabilities.vision || model.capabilities.reasoning ||
+                    model.capabilities.images || model.capabilities.video) {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = "Capabilities:",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        if (model.capabilities.vision) {
+                            Text("• Vision", style = MaterialTheme.typography.bodySmall)
+                        }
+                        if (model.capabilities.reasoning) {
+                            Text("• Reasoning", style = MaterialTheme.typography.bodySmall)
+                        }
+                        if (model.capabilities.images) {
+                            Text("• Image Generation", style = MaterialTheme.typography.bodySmall)
+                        }
+                        if (model.capabilities.video) {
+                            Text("• Video", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+
+                // Pricing information
+                model.pricing?.let { pricing ->
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = "Pricing:",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        pricing.prompt?.let {
+                            PricingItem("Prompt", it, roundToDecimals = true)
+                        }
+                        pricing.completion?.let {
+                            PricingItem("Completion", it, roundToDecimals = true)
+                        }
+                        pricing.image?.let {
+                            PricingItem("Image", it, roundToDecimals = false)
+                        }
+                        pricing.request?.let {
+                            PricingItem("Request", it, roundToDecimals = false)
+                        }
+                    }
+                }
+
+                // Subscription info
+                model.subscription?.let { sub ->
+                    Text(
+                        text = if (sub.included) "✓ Included in subscription" else "Not included in subscription",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (sub.included) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        fontWeight = if (sub.included) FontWeight.SemiBold else FontWeight.Normal
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        }
+    )
+}
+
+@Composable
+fun CapabilityBadge(label: String) {
+    Surface(
+        shape = RoundedCornerShape(4.dp),
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onPrimaryContainer,
+            fontSize = 10.sp
+        )
+    }
+}
+
+@Composable
+fun PricingItem(label: String, value: String, roundToDecimals: Boolean = false) {
+    val displayValue = if (roundToDecimals) {
+        // Try to parse as number and round to 3 decimal places
+        value.toDoubleOrNull()?.let { num ->
+            String.format("%.3f", num)
+        } ?: value
+    } else {
+        value
+    }
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = "$label:",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            text = displayValue,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontWeight = FontWeight.SemiBold
         )
     }
 }

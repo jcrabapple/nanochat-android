@@ -134,6 +134,9 @@ fun NanoChatNavGraph(
                 SettingsScreen(
                     onNavigateBack = {
                         navController.popBackStack()
+                    },
+                    onNavigateToAssistants = {
+                        navController.navigate(Screen.Assistants.route)
                     }
                 )
             }

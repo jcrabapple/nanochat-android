@@ -14,28 +14,36 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material.icons.outlined.ChatBubble
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material3.Surface
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.MessageCirclePlus
+import com.composables.icons.lucide.Bookmark
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.ui.graphics.Color
@@ -89,6 +97,7 @@ fun ChatScreen(
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     var showModelSelector by remember { mutableStateOf(false) }
     var showWebSearchConfig by remember { mutableStateOf(false) }
+    var showAssistantSheet by remember { mutableStateOf(false) }
 
     // Auto-scroll to bottom on new messages
     LaunchedEffect(messages.size) {
@@ -130,7 +139,7 @@ fun ChatScreen(
                 onAssistantsClick = {
                     coroutineScope.launch {
                         drawerState.close()
-                        onNavigateToAssistants()
+                        showAssistantSheet = true
                     }
                 },
                 onProjectsClick = {
@@ -153,19 +162,32 @@ fun ChatScreen(
                         containerColor = androidx.compose.ui.graphics.Color.Transparent
                     ),
                     title = {
-                        Column {
-                            Text(
-                                text = uiState.conversation?.title ?: "Chat",
-                                style = MaterialTheme.typography.titleMedium
-                            )
-                            uiState.selectedModel?.let { model ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Column {
                                 Text(
-                                    text = model.name,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    overflow = TextOverflow.Ellipsis,
-                                    maxLines = 1
+                                    text = uiState.conversation?.title ?: "Chat",
+                                    style = MaterialTheme.typography.titleMedium
                                 )
+                                uiState.selectedAssistant?.let { assistant ->
+                                    Text(
+                                        text = assistant.name,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        overflow = TextOverflow.Ellipsis,
+                                        maxLines = 1
+                                    )
+                                } ?: uiState.selectedModel?.let { model ->
+                                    Text(
+                                        text = model.name,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        overflow = TextOverflow.Ellipsis,
+                                        maxLines = 1
+                                    )
+                                }
                             }
                         }
                     },
@@ -182,28 +204,47 @@ fun ChatScreen(
                     },
                     actions = {
                         // Save to Karakeep button
-                        IconButton(onClick = {
-                            val currentConversationId = uiState.conversation?.id ?: conversationId
-                            if (currentConversationId != null) {
-                                viewModel.saveChatToKarakeep { success, message ->
+                        Surface(
+                            onClick = {
+                                val currentConversationId = uiState.conversation?.id ?: conversationId
+                                if (currentConversationId != null) {
+                                    viewModel.saveChatToKarakeep { success, message ->
+                                        Toast.makeText(
+                                            context,
+                                            message,
+                                            if (success) Toast.LENGTH_SHORT else Toast.LENGTH_LONG
+                                        ).show()
+                                    }
+                                } else {
                                     Toast.makeText(
                                         context,
-                                        message,
-                                        if (success) Toast.LENGTH_SHORT else Toast.LENGTH_LONG
+                                        "No active conversation to save",
+                                        Toast.LENGTH_SHORT
                                     ).show()
                                 }
-                            } else {
-                                Toast.makeText(
-                                    context,
-                                    "No active conversation to save",
-                                    Toast.LENGTH_SHORT
-                                ).show()
+                            },
+                            modifier = Modifier.padding(end = 8.dp),
+                            shape = RoundedCornerShape(20.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            tonalElevation = 2.dp
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Lucide.Bookmark,
+                                    contentDescription = "Save to Karakeep",
+                                    modifier = Modifier.size(18.dp),
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                                Text(
+                                    "Save",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
                             }
-                        }) {
-                            Icon(
-                                Icons.Filled.Upload,
-                                contentDescription = "Save to Karakeep"
-                            )
                         }
 
                         IconButton(onClick = {
@@ -349,5 +390,144 @@ fun ChatScreen(
             onDismiss = { showWebSearchConfig = false }
         )
     }
+
+    // Assistant selector bottom sheet
+    if (showAssistantSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showAssistantSheet = false }
+        ) {
+            AssistantSelectorSheetContent(
+                assistants = uiState.availableAssistants,
+                selectedAssistant = uiState.selectedAssistant,
+                onAssistantSelected = { assistant ->
+                    viewModel.selectAssistant(assistant)
+                    showAssistantSheet = false
+                }
+            )
+        }
+    }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AssistantSelectorSheetContent(
+    assistants: List<com.nanogpt.chat.data.local.entity.AssistantEntity>,
+    selectedAssistant: com.nanogpt.chat.data.local.entity.AssistantEntity?,
+    onAssistantSelected: (com.nanogpt.chat.data.local.entity.AssistantEntity?) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp)
+    ) {
+        Text(
+            text = "Select Assistant",
+            style = MaterialTheme.typography.titleLarge,
+            modifier = Modifier.padding(bottom = 16.dp)
+        )
+
+        // None option
+        AssistantOptionItem(
+            name = "No Assistant",
+            description = "Use default settings",
+            firstLetter = "N",
+            isSelected = selectedAssistant == null,
+            onClick = { onAssistantSelected(null) }
+        )
+
+        // Assistants list
+        assistants.forEach { assistant ->
+            AssistantOptionItem(
+                name = assistant.name,
+                description = assistant.description ?: "No description",
+                firstLetter = assistant.name.first().toString(),
+                isSelected = selectedAssistant?.id == assistant.id,
+                onClick = { onAssistantSelected(assistant) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun AssistantOptionItem(
+    name: String,
+    description: String,
+    firstLetter: String,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = if (isSelected) 4.dp else 1.dp
+        ),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else {
+                MaterialTheme.colorScheme.surface
+            }
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Avatar
+            Surface(
+                modifier = Modifier.size(40.dp),
+                shape = CircleShape,
+                color = if (isSelected) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.primaryContainer
+                }
+            ) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    Text(
+                        text = firstLetter,
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = if (isSelected) {
+                            MaterialTheme.colorScheme.onPrimary
+                        } else {
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        }
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = name,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (isSelected) {
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    }
+                )
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (isSelected) {
+                        MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
     }
 }

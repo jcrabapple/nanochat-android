@@ -13,11 +13,13 @@ import com.nanogpt.chat.data.repository.ConversationRepository
 import com.nanogpt.chat.data.repository.MessageRepository
 import com.nanogpt.chat.data.repository.WebSearchRepository
 import com.nanogpt.chat.data.repository.ConversationTitlePoller
+import com.nanogpt.chat.data.repository.AssistantRepository
 import com.nanogpt.chat.data.repository.toEntity
 import com.nanogpt.chat.data.local.SecureStorage
 import com.nanogpt.chat.data.sync.ConversationSyncManager
 import com.nanogpt.chat.data.local.dao.MessageDao
 import com.nanogpt.chat.data.local.entity.ConversationEntity
+import com.nanogpt.chat.data.local.entity.AssistantEntity
 import com.nanogpt.chat.ui.chat.components.ModelInfo
 import com.nanogpt.chat.data.local.entity.MessageEntity
 import com.nanogpt.chat.ui.chat.components.WebSearchMode
@@ -40,6 +42,7 @@ class ChatViewModel @Inject constructor(
     private val conversationRepository: ConversationRepository,
     private val streamingManager: StreamingManager,
     private val webSearchRepository: WebSearchRepository,
+    private val assistantRepository: AssistantRepository,
     private val secureStorage: SecureStorage,
     private val api: NanoChatApi,
     private val messageDao: MessageDao,
@@ -65,6 +68,7 @@ class ChatViewModel @Inject constructor(
 
     init {
         fetchUserModels()
+        fetchAssistants()
         if (conversationId != null) {
             titleGenerated = true // Existing conversations already have titles
             loadConversation()
@@ -175,7 +179,7 @@ class ChatViewModel @Inject constructor(
                 message = message,
                 model_id = _uiState.value.selectedModel?.id ?: "gpt-4o-mini",
                 conversation_id = conversationId,
-                assistant_id = _uiState.value.conversation?.assistantId,
+                assistant_id = _uiState.value.selectedAssistant?.id,
                 web_search_enabled = _uiState.value.webSearchMode != WebSearchMode.OFF,
                 web_search_mode = webSearchMode,
                 web_search_provider = webSearchProvider
@@ -488,16 +492,38 @@ class ChatViewModel @Inject constructor(
                     }
                 } else {
                     val errorCode = response.code()
-                    val errorMsg = "HTTP $errorCode"
-                    android.util.Log.e("Karakeep", "Failed to save: HTTP $errorCode")
+                    val errorBody = response.errorBody()?.string()
+                    android.util.Log.e("Karakeep", "Failed to save: HTTP $errorCode - $errorBody")
+
+                    val errorMsg = when (errorCode) {
+                        404 -> "Karakeep not configured"
+                        400 -> {
+                            // Only show "Karakeep not configured" if error body contains Karakeep-related message
+                            when {
+                                errorBody?.contains("Karakeep", ignoreCase = true) == true &&
+                                (errorBody.contains("not configured", ignoreCase = true) ||
+                                 errorBody.contains("not set up", ignoreCase = true) ||
+                                 errorBody.contains("missing", ignoreCase = true)) -> "Karakeep not configured"
+                                else -> "Error: $errorBody"
+                            }
+                        }
+                        else -> "HTTP $errorCode"
+                    }
                     withContext(kotlinx.coroutines.Dispatchers.Main) {
-                        onResult(false, "Failed: $errorMsg")
+                        onResult(false, errorMsg)
                     }
                 }
             } catch (e: Exception) {
                 android.util.Log.e("Karakeep", "Error saving to Karakeep: ${e.message}", e)
+                val errorMsg = when {
+                    e.message?.contains("404", ignoreCase = true) == true -> "Karakeep not configured"
+                    e.message?.contains("400", ignoreCase = true) == true &&
+                    (e.message?.contains("Karakeep", ignoreCase = true) == true ||
+                     e.message?.contains("configured", ignoreCase = true) == true) -> "Karakeep not configured"
+                    else -> "Error: ${e.message}"
+                }
                 withContext(kotlinx.coroutines.Dispatchers.Main) {
-                    onResult(false, "Error: ${e.message}")
+                    onResult(false, errorMsg)
                 }
             }
         }
@@ -610,6 +636,70 @@ class ChatViewModel @Inject constructor(
         }
     }
 
+    private fun fetchAssistants() {
+        viewModelScope.launch {
+            try {
+                assistantRepository.getAssistants().collect { assistants ->
+                    _uiState.value = _uiState.value.copy(
+                        availableAssistants = assistants
+                    )
+
+                    // If conversation has an assistant, load it
+                    if (_uiState.value.conversation?.assistantId != null) {
+                        val assistant = assistants.find { it.id == _uiState.value.conversation!!.assistantId }
+                        if (assistant != null) {
+                            applyAssistantSettings(assistant)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("ChatViewModel", "Failed to fetch assistants", e)
+            }
+        }
+    }
+
+    fun selectAssistant(assistant: AssistantEntity?) {
+        _uiState.value = _uiState.value.copy(selectedAssistant = assistant)
+
+        if (assistant != null) {
+            applyAssistantSettings(assistant)
+        } else {
+            // Reset to defaults
+            _uiState.value = _uiState.value.copy(
+                selectedModel = _uiState.value.availableModels.firstOrNull(),
+                webSearchMode = WebSearchMode.OFF
+            )
+        }
+    }
+
+    private fun applyAssistantSettings(assistant: AssistantEntity) {
+        // Apply model
+        val model = _uiState.value.availableModels.find { it.id == assistant.modelId }
+        if (model != null) {
+            _uiState.value = _uiState.value.copy(selectedModel = model)
+        }
+
+        // Apply web search settings
+        if (assistant.webSearchEnabled) {
+            val mode = when (assistant.webSearchMode) {
+                "deep" -> WebSearchMode.DEEP
+                else -> WebSearchMode.STANDARD
+            }
+            val provider = when (assistant.webSearchProvider) {
+                "tavily" -> WebSearchProvider.TAVILY
+                "exa" -> WebSearchProvider.EXA
+                "kagi" -> WebSearchProvider.KAGI
+                else -> WebSearchProvider.LINKUP
+            }
+            _uiState.value = _uiState.value.copy(
+                webSearchMode = mode,
+                webSearchProvider = provider
+            )
+        } else {
+            _uiState.value = _uiState.value.copy(webSearchMode = WebSearchMode.OFF)
+        }
+    }
+
     private fun extractProviderFromModelId(modelId: String): String? {
         // Model IDs are in format "provider/model-name" like "zai-org/glm-4.7"
         val parts = modelId.split("/", limit = 2)
@@ -667,7 +757,9 @@ data class ChatUiState(
     val webSearchMode: WebSearchMode = WebSearchMode.OFF,
     val webSearchProvider: WebSearchProvider = WebSearchProvider.LINKUP,
     val selectedModel: ModelInfo? = ModelInfo("gpt-4o-mini", "GPT-4o Mini"),
-    val availableModels: List<ModelInfo> = emptyList()
+    val availableModels: List<ModelInfo> = emptyList(),
+    val selectedAssistant: AssistantEntity? = null,
+    val availableAssistants: List<AssistantEntity> = emptyList()
 )
 
 // Domain model for messages

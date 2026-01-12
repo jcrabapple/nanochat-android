@@ -92,6 +92,10 @@ interface NanoChatApi {
     @POST("/api/db/user-models")
     suspend fun updateUserModel(@Body request: UpdateUserModelRequest): Response<Unit>
 
+    // ============== Models ==============
+    @GET("/api/models")
+    suspend fun getModels(): Response<List<ModelDto>>
+
     // ============== Model Providers ==============
     @GET("/api/model-providers")
     suspend fun getModelProviders(

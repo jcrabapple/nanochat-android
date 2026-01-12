@@ -87,8 +87,7 @@ fun ChatDrawer(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .padding(12.dp)
         ) {
             // Branding header
             Row(
@@ -148,12 +147,14 @@ fun ChatDrawer(
 
             // Conversation list
             if (uiState.conversations.isEmpty()) {
-                Text(
-                    "No conversations yet",
-                    modifier = Modifier.padding(16.dp),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Box(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "No conversations yet",
+                        modifier = Modifier.padding(16.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             } else {
                 val filteredConversations = if (searchQuery.isBlank()) {
                     uiState.conversations

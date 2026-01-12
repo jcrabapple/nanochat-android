@@ -5,13 +5,20 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.paging.Pager
+import androidx.paging.PagingConfig
+import androidx.paging.PagingData
+import androidx.paging.cachedIn
 import com.nanogpt.chat.data.local.SecureStorage
+import com.nanogpt.chat.data.paging.ModelsPagingSource
 import com.nanogpt.chat.data.remote.api.NanoChatApi
-import com.nanogpt.chat.ui.theme.ThemeManager
+import com.nanogpt.chat.data.remote.dto.ModelDto
 import com.nanogpt.chat.data.remote.dto.SettingsUpdates
 import com.nanogpt.chat.data.remote.dto.UserSettingsDto
 import com.nanogpt.chat.data.remote.dto.parseUserModelsResponse
+import com.nanogpt.chat.ui.theme.ThemeManager
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -32,6 +39,7 @@ class SettingsViewModel @Inject constructor(
     init {
         fetchSettings()
         fetchUserModels()
+        fetchEnabledModelIds()
         loadLocalTtsSttSettings()
     }
 
@@ -47,6 +55,22 @@ class SettingsViewModel @Inject constructor(
     private fun fetchUserModels() {
         viewModelScope.launch {
             try {
+                val response = api.getModels()
+                if (response.isSuccessful && response.body() != null) {
+                    val allModels = response.body()!!
+                    _uiState.value = _uiState.value.copy(allModels = allModels)
+                }
+            } catch (e: Exception) {
+                // Log error but don't show to user - models are optional for settings
+                android.util.Log.e("SettingsViewModel", "Error fetching models", e)
+                _uiState.value = _uiState.value.copy(allModels = emptyList())
+            }
+        }
+    }
+
+    private fun fetchEnabledModelIds() {
+        viewModelScope.launch {
+            try {
                 val response = api.getUserModels()
                 if (response.isSuccessful && response.body() != null) {
                     val json = Json {
@@ -54,12 +78,13 @@ class SettingsViewModel @Inject constructor(
                         isLenient = true
                     }
                     val jsonElement = json.parseToJsonElement(response.body()!!.string())
-                    val models = parseUserModelsResponse(jsonElement)
-                    _uiState.value = _uiState.value.copy(userModels = models)
+                    val userModels = parseUserModelsResponse(jsonElement)
+                    val enabledModelIds = userModels.map { it.modelId }.toSet()
+                    _uiState.value = _uiState.value.copy(enabledModelIds = enabledModelIds)
                 }
             } catch (e: Exception) {
-                // Log error but don't show to user - models are optional for settings
-                _uiState.value = _uiState.value.copy(userModels = emptyList())
+                android.util.Log.e("SettingsViewModel", "Error fetching enabled models", e)
+                _uiState.value = _uiState.value.copy(enabledModelIds = emptySet())
             }
         }
     }
@@ -364,13 +389,102 @@ class SettingsViewModel @Inject constructor(
             }
         }
     }
+
+    fun toggleModelEnabled(model: com.nanogpt.chat.data.remote.dto.ModelDto) {
+        viewModelScope.launch {
+            try {
+                val provider = inferProviderFromModelId(model.id)
+                val response = api.updateUserModel(
+                    com.nanogpt.chat.data.remote.dto.UpdateUserModelRequest(
+                        action = "set",
+                        provider = provider,
+                        modelId = model.id,
+                        enabled = !model.enabled
+                    )
+                )
+                if (response.isSuccessful) {
+                    // Update local state for the cached allModels
+                    val newEnabledState = !model.enabled
+                    val updatedAllModels = _uiState.value.allModels.map { m ->
+                        if (m.id == model.id) {
+                            m.copy(enabled = newEnabledState)
+                        } else {
+                            m
+                        }
+                    }
+
+                    // Update enabledModelIds set
+                    val updatedEnabledIds = if (newEnabledState) {
+                        _uiState.value.enabledModelIds + model.id
+                    } else {
+                        _uiState.value.enabledModelIds - model.id
+                    }
+
+                    _uiState.value = _uiState.value.copy(
+                        allModels = updatedAllModels,
+                        enabledModelIds = updatedEnabledIds
+                    )
+                } else {
+                    _uiState.value = _uiState.value.copy(
+                        error = "Failed to update model: ${response.code()}"
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    error = "Error updating model: ${e.message}"
+                )
+            }
+        }
+    }
+
+    // Helper to infer provider from model ID
+    private fun inferProviderFromModelId(modelId: String): String {
+        return when {
+            modelId.startsWith("gpt", ignoreCase = true) -> "openai"
+            modelId.startsWith("claude", ignoreCase = true) -> "anthropic"
+            modelId.startsWith("gemini", ignoreCase = true) -> "google"
+            modelId.contains("llama", ignoreCase = true) -> "meta"
+            modelId.contains("mistral", ignoreCase = true) -> "mistral"
+            modelId.contains("deepseek", ignoreCase = true) -> "deepseek"
+            modelId.contains("zhipu", ignoreCase = true) || modelId.contains("glm", ignoreCase = true) -> "zhipu"
+            else -> "nanogpt"
+        }
+    }
+
+    fun refreshModels() {
+        fetchUserModels()
+        fetchEnabledModelIds()
+    }
+
+    /**
+     * Returns a Flow of PagingData for models with the given filter.
+     * This uses the cached allModels list and applies the filter function.
+     */
+    fun getModelsPagingFlow(
+        filter: (ModelDto) -> Boolean
+    ): Flow<PagingData<ModelDto>> {
+        return Pager(
+            config = PagingConfig(
+                pageSize = ModelsPagingSource.PAGE_SIZE,
+                enablePlaceholders = false,
+                prefetchDistance = 10
+            ),
+            pagingSourceFactory = {
+                ModelsPagingSource(
+                    models = _uiState.value.allModels,
+                    filter = filter
+                )
+            }
+        ).flow.cachedIn(viewModelScope)
+    }
 }
 
 data class SettingsUiState(
     val settings: UserSettingsDto? = null,
     val isLoading: Boolean = false,
     val error: String? = null,
-    val userModels: List<com.nanogpt.chat.data.remote.dto.UserModelDto> = emptyList(),
+    val allModels: List<com.nanogpt.chat.data.remote.dto.ModelDto> = emptyList(), // Cached full list
+    val enabledModelIds: Set<String> = emptySet(), // Model IDs that are enabled (from /api/db/user-models)
     // Local TTS/STT settings (not synced to backend)
     val ttsModel: String? = null,
     val ttsVoice: String? = null,

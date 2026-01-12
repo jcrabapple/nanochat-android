@@ -85,6 +85,10 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+        jniLibs {
+            excludes += "**/libimage_processing_util_jni.so"
+            excludes += "**/libdatastore_shared_counter.so"
+        }
     }
 }
 
@@ -142,6 +146,10 @@ dependencies {
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
+
+    // Paging 3
+    implementation("androidx.paging:paging-runtime-ktx:3.3.2")
+    implementation("androidx.paging:paging-compose:3.3.2")
 
     // Image Loading
     implementation("io.coil-kt:coil-compose:2.7.0")

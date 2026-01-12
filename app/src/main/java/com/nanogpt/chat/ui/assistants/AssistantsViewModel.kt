@@ -4,16 +4,21 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nanogpt.chat.data.local.entity.AssistantEntity
 import com.nanogpt.chat.data.repository.AssistantRepository
+import com.nanogpt.chat.data.remote.api.NanoChatApi
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import javax.inject.Inject
 
 @HiltViewModel
 class AssistantsViewModel @Inject constructor(
-    private val assistantRepository: AssistantRepository
+    private val assistantRepository: AssistantRepository,
+    private val api: NanoChatApi
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AssistantsUiState())
@@ -21,6 +26,7 @@ class AssistantsViewModel @Inject constructor(
 
     init {
         observeAssistants()
+        fetchUserModels()
     }
 
     private fun observeAssistants() {
@@ -34,13 +40,57 @@ class AssistantsViewModel @Inject constructor(
         }
     }
 
+    private fun fetchUserModels() {
+        viewModelScope.launch {
+            try {
+                val response = api.getUserModels()
+                if (response.isSuccessful) {
+                    val body = response.body()?.string() ?: "{}"
+                    val jsonElement = Json.parseToJsonElement(body)
+                    val userModels = parseUserModelsResponse(jsonElement)
+                    _uiState.value = _uiState.value.copy(
+                        availableModels = userModels
+                            .filter { it.enabled }
+                            .sortedByDescending { it.pinned }
+                            .map { it.modelId to it.name }
+                    )
+                }
+            } catch (e: Exception) {
+                // Keep empty list on error, will fall back to hardcoded models
+                android.util.Log.e("AssistantsViewModel", "Failed to fetch user models", e)
+            }
+        }
+    }
+
+    private fun parseUserModelsResponse(jsonElement: kotlinx.serialization.json.JsonElement): List<UserModelInfo> {
+        val models = mutableListOf<UserModelInfo>()
+        if (jsonElement is kotlinx.serialization.json.JsonObject) {
+            jsonElement.forEach { (key, value) ->
+                if (value is kotlinx.serialization.json.JsonObject) {
+                    val modelId = value["modelId"]?.jsonPrimitive?.content ?: key
+                    val name = value["name"]?.jsonPrimitive?.content ?: modelId
+                    val enabled = value["enabled"]?.jsonPrimitive?.content?.toBoolean() ?: true
+                    val pinned = value["pinned"]?.jsonPrimitive?.content?.toBoolean() ?: false
+                    models.add(UserModelInfo(modelId, name, enabled, pinned))
+                }
+            }
+        }
+        return models
+    }
+
     fun createAssistant(
         name: String,
         description: String,
         instructions: String,
         modelId: String,
         webSearchEnabled: Boolean,
-        webSearchProvider: String?
+        webSearchProvider: String?,
+        temperature: Double?,
+        topP: Double?,
+        maxTokens: Int?,
+        contextSize: Int?,
+        reasoningEffort: String?,
+        webSearchMode: String?
     ) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
@@ -51,7 +101,13 @@ class AssistantsViewModel @Inject constructor(
                 instructions = instructions,
                 modelId = modelId,
                 webSearchEnabled = webSearchEnabled,
-                webSearchProvider = webSearchProvider
+                webSearchProvider = webSearchProvider,
+                temperature = temperature,
+                topP = topP,
+                maxTokens = maxTokens,
+                contextSize = contextSize,
+                reasoningEffort = reasoningEffort,
+                webSearchMode = webSearchMode
             )
 
             result.onSuccess {
@@ -72,7 +128,13 @@ class AssistantsViewModel @Inject constructor(
         instructions: String,
         modelId: String,
         webSearchEnabled: Boolean,
-        webSearchProvider: String?
+        webSearchProvider: String?,
+        temperature: Double?,
+        topP: Double?,
+        maxTokens: Int?,
+        contextSize: Int?,
+        reasoningEffort: String?,
+        webSearchMode: String?
     ) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
@@ -84,7 +146,13 @@ class AssistantsViewModel @Inject constructor(
                 instructions = instructions.takeIf { it.isNotBlank() },
                 modelId = modelId.takeIf { it.isNotBlank() },
                 webSearchEnabled = webSearchEnabled,
-                webSearchProvider = webSearchProvider
+                webSearchProvider = webSearchProvider,
+                temperature = temperature,
+                topP = topP,
+                maxTokens = maxTokens,
+                contextSize = contextSize,
+                reasoningEffort = reasoningEffort,
+                webSearchMode = webSearchMode
             )
 
             result.onSuccess {
@@ -130,5 +198,13 @@ class AssistantsViewModel @Inject constructor(
 data class AssistantsUiState(
     val assistants: List<AssistantEntity> = emptyList(),
     val isLoading: Boolean = true,
-    val error: String? = null
+    val error: String? = null,
+    val availableModels: List<Pair<String, String>> = emptyList() // (modelId, name)
+)
+
+private data class UserModelInfo(
+    val modelId: String,
+    val name: String,
+    val enabled: Boolean,
+    val pinned: Boolean
 )

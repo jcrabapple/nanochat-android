@@ -20,7 +20,6 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -102,20 +101,21 @@ fun AssistantsScreen(
 
     if (showCreateDialog) {
         AssistantDialog(
-            onCreate = { name, description, instructions, modelId, webSearchEnabled, provider ->
-                viewModel.createAssistant(name, description, instructions, modelId, webSearchEnabled, provider)
+            onCreate = { name: String, description: String, instructions: String, modelId: String, webSearchEnabled: Boolean, provider: String?, mode: String?, temp: Double?, topP: Double?, maxTokens: Int?, contextSize: Int?, reasoning: String ->
+                viewModel.createAssistant(name, description, instructions, modelId, webSearchEnabled, provider, temp, topP, maxTokens, contextSize, reasoning, mode)
                 showCreateDialog = false
             },
-            onUpdate = { _, _, _, _, _, _ -> },
-            onDismiss = { showCreateDialog = false }
+            onUpdate = { _: String, _: String, _: String, _: String, _: Boolean, _: String?, _: String?, _: Double?, _: Double?, _: Int?, _: Int?, _: String -> },
+            onDismiss = { showCreateDialog = false },
+            availableModels = uiState.availableModels
         )
     }
 
     if (editingAssistant != null) {
         AssistantDialog(
             assistant = editingAssistant,
-            onCreate = { _, _, _, _, _, _ -> },
-            onUpdate = { name, description, instructions, modelId, webSearchEnabled, provider ->
+            onCreate = { _: String, _: String, _: String, _: String, _: Boolean, _: String?, _: String?, _: Double?, _: Double?, _: Int?, _: Int?, _: String -> },
+            onUpdate = { name: String, description: String, instructions: String, modelId: String, webSearchEnabled: Boolean, provider: String?, mode: String?, temp: Double?, topP: Double?, maxTokens: Int?, contextSize: Int?, reasoning: String ->
                 viewModel.updateAssistant(
                     editingAssistant!!.id,
                     name,
@@ -123,11 +123,18 @@ fun AssistantsScreen(
                     instructions,
                     modelId,
                     webSearchEnabled,
-                    provider
+                    provider,
+                    temp,
+                    topP,
+                    maxTokens,
+                    contextSize,
+                    reasoning,
+                    mode
                 )
                 editingAssistant = null
             },
-            onDismiss = { editingAssistant = null }
+            onDismiss = { editingAssistant = null },
+            availableModels = uiState.availableModels
         )
     }
 }
@@ -157,18 +164,22 @@ fun AssistantItem(
                 modifier = Modifier.weight(1f),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Avatar
+                // Avatar - use first letter of assistant name
                 Surface(
                     modifier = Modifier.size(40.dp),
                     shape = CircleShape,
                     color = MaterialTheme.colorScheme.primaryContainer
                 ) {
-                    Icon(
-                        Icons.Default.Person,
-                        contentDescription = null,
-                        modifier = Modifier.padding(8.dp),
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        Text(
+                            text = assistant.name.first().toString(),
+                            style = MaterialTheme.typography.headlineMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.width(12.dp))
@@ -207,6 +218,21 @@ fun AssistantItem(
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSecondaryContainer
                             )
+                        }
+
+                        // Temperature badge (if not default)
+                        if (assistant.temperature != null && assistant.temperature != 0.7) {
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = MaterialTheme.colorScheme.tertiaryContainer
+                            ) {
+                                Text(
+                                    text = "T: ${assistant.temperature}",
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onTertiaryContainer
+                                )
+                            }
                         }
 
                         // Web search badge
