@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nanogpt.chat.data.local.SecureStorage
+import com.nanogpt.chat.ui.theme.ThemeManager
 import com.nanogpt.chat.utils.DebugLogger
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,7 +21,8 @@ import javax.net.ssl.SSLException
 @HiltViewModel
 class SetupViewModel @Inject constructor(
     private val secureStorage: SecureStorage,
-    private val debugLogger: DebugLogger
+    private val debugLogger: DebugLogger,
+    val themeManager: ThemeManager
 ) : ViewModel() {
 
     private val TAG = "SetupViewModel"

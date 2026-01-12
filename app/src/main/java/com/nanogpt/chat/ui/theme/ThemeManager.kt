@@ -30,8 +30,22 @@ class ThemeManager @Inject constructor(
     private val storage: SecureStorage
 ) {
     // StateFlow for reactive UI updates
-    private val _isDarkMode = MutableStateFlow(storage.getUseDarkMode() ?: isSystemInDarkTheme(storage))
+    // Use lazy initialization to avoid issues during Hilt injection
+    private val _isDarkMode = MutableStateFlow<Boolean>(false)
     val isDarkMode: StateFlow<Boolean> = _isDarkMode.asStateFlow()
+
+    private var initialized = false
+    private val lock = Any()
+
+    private fun ensureInitialized() {
+        synchronized(lock) {
+            if (!initialized) {
+                val savedPreference = storage.getUseDarkMode()
+                _isDarkMode.value = savedPreference ?: isSystemInDarkTheme(storage)
+                initialized = true
+            }
+        }
+    }
 
     private val _lightTheme = MutableStateFlow(
         ThemeChoice.fromString(storage.getLightTheme(), ThemeChoice.defaultLightTheme())
@@ -49,6 +63,9 @@ class ThemeManager @Inject constructor(
      */
     @Composable
     fun getAppColorScheme(): ColorScheme {
+        // Ensure initialization before accessing theme
+        ensureInitialized()
+
         val context = LocalContext.current
         val isDark by isDarkMode.collectAsState()
         val lightTheme by lightTheme.collectAsState()

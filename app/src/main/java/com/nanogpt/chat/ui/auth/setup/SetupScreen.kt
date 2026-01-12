@@ -29,12 +29,13 @@ import com.nanogpt.chat.ui.theme.ThemeManager
 
 @Composable
 fun SetupScreen(
-    themeManager: ThemeManager,
-    viewModel: SetupViewModel = hiltViewModel(),
-    onComplete: () -> Unit = {}
+    onComplete: () -> Unit
 ) {
+    val viewModel: SetupViewModel = hiltViewModel()
     val uiState by viewModel.uiState.collectAsState()
-    val colorScheme = themeManager.getAppColorScheme()
+
+    // Get theme from ViewModel's themeManager reference
+    val colorScheme = viewModel.themeManager.getAppColorScheme()
 
     Surface(
         modifier = Modifier.fillMaxSize(),

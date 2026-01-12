@@ -48,7 +48,6 @@ fun NanoChatNavGraph(
     ) {
         composable(Screen.Setup.route) {
             SetupScreen(
-                themeManager = themeManager,
                 onComplete = {
                     navController.navigate("chat") {
                         popUpTo(Screen.Setup.route) { inclusive = true }
