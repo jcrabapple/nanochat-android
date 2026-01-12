@@ -19,7 +19,9 @@ import com.nanogpt.chat.data.remote.dto.SettingsUpdates
 import com.nanogpt.chat.data.remote.dto.UserSettingsDto
 import com.nanogpt.chat.data.remote.dto.parseUserModelsResponse
 import com.nanogpt.chat.ui.theme.ThemeManager
+import com.nanogpt.chat.utils.DebugLogger
 import dagger.hilt.android.lifecycle.HiltViewModel
+import android.content.Context
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -32,7 +34,8 @@ import javax.inject.Inject
 class SettingsViewModel @Inject constructor(
     private val api: NanoChatApi,
     private val secureStorage: SecureStorage,
-    val themeManager: ThemeManager
+    val themeManager: ThemeManager,
+    private val debugLogger: DebugLogger
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
@@ -584,6 +587,30 @@ class SettingsViewModel @Inject constructor(
                 )
             }
         ).flow.cachedIn(viewModelScope)
+    }
+
+    /**
+     * Share debug logs via intent
+     */
+    fun shareDebugLogs(context: Context) {
+        viewModelScope.launch {
+            try {
+                val logs = debugLogger.collectDebugLogs()
+                debugLogger.shareDebugLogs(logs)
+            } catch (e: Exception) {
+                // If we can't collect logs, at least try to share basic info
+                val basicInfo = """
+                    NanoChat Mobile Debug Report
+
+                    App Version: ${com.nanogpt.chat.BuildConfig.VERSION_NAME}
+                    Device: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}
+                    Android: ${android.os.Build.VERSION.RELEASE}
+
+                    Error collecting logs: ${e.message}
+                """.trimIndent()
+                debugLogger.shareDebugLogs(basicInfo)
+            }
+        }
     }
 }
 

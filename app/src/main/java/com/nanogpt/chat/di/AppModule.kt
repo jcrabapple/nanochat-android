@@ -3,6 +3,7 @@ package com.nanogpt.chat.di
 import android.content.Context
 import com.nanogpt.chat.data.local.SecureStorage
 import com.nanogpt.chat.ui.theme.ThemeManager
+import com.nanogpt.chat.utils.DebugLogger
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -26,5 +27,14 @@ object AppModule {
     @Singleton
     fun provideThemeManager(storage: SecureStorage): ThemeManager {
         return ThemeManager(storage)
+    }
+
+    @Provides
+    @Singleton
+    fun provideDebugLogger(
+        @ApplicationContext context: Context,
+        storage: SecureStorage
+    ): DebugLogger {
+        return DebugLogger(context, storage)
     }
 }
