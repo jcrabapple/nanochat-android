@@ -8,6 +8,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.core.view.WindowCompat
+import com.nanogpt.chat.data.local.SecureStorage
 import com.nanogpt.chat.data.sync.ConversationSyncWorker
 import com.nanogpt.chat.ui.navigation.NanoChatNavGraph
 import com.nanogpt.chat.ui.theme.NanoChatTheme
@@ -20,6 +21,9 @@ class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var themeManager: ThemeManager
+
+    @Inject
+    lateinit var secureStorage: SecureStorage
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -36,7 +40,10 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    NanoChatNavGraph()
+                    NanoChatNavGraph(
+                        themeManager = themeManager,
+                        secureStorage = secureStorage
+                    )
                 }
             }
         }

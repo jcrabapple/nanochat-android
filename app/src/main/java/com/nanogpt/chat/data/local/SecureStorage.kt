@@ -7,17 +7,24 @@ import androidx.security.crypto.MasterKey
 
 class SecureStorage(context: Context) {
 
-    private val masterKey = MasterKey.Builder(context)
+    private val appContext = context.applicationContext
+
+    private val masterKey = MasterKey.Builder(appContext)
         .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
         .build()
 
     private val sharedPreferences: SharedPreferences = EncryptedSharedPreferences.create(
-        context,
+        appContext,
         "secure_prefs",
         masterKey,
         EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
         EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
     )
+
+    /**
+     * Get the application context
+     */
+    fun getContext(): Context = appContext
 
     companion object {
         private const val KEY_SESSION_TOKEN = "session_token"

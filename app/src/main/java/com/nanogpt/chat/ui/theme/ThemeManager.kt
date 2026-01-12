@@ -1,6 +1,8 @@
 package com.nanogpt.chat.ui.theme
 
 import android.app.Activity
+import android.content.Context
+import android.content.res.Configuration
 import android.os.Build
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
@@ -28,7 +30,7 @@ class ThemeManager @Inject constructor(
     private val storage: SecureStorage
 ) {
     // StateFlow for reactive UI updates
-    private val _isDarkMode = MutableStateFlow(storage.getUseDarkMode() ?: isSystemDarkThemeDefault())
+    private val _isDarkMode = MutableStateFlow(storage.getUseDarkMode() ?: isSystemInDarkTheme(storage))
     val isDarkMode: StateFlow<Boolean> = _isDarkMode.asStateFlow()
 
     private val _lightTheme = MutableStateFlow(
@@ -161,12 +163,16 @@ class ThemeManager @Inject constructor(
     }
 
     /**
-     * Get the default dark mode setting based on system
+     * Detect if the system is currently in dark mode
      */
-    private fun isSystemDarkThemeDefault(): Boolean {
-        // We'll default to following system settings
-        // In the future, we could use android.provider.Settings.System
-        return false
+    private fun isSystemInDarkTheme(storage: SecureStorage): Boolean {
+        return try {
+            val context = storage.getContext()
+            val nightModeFlags = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
+            nightModeFlags == Configuration.UI_MODE_NIGHT_YES
+        } catch (e: Exception) {
+            false // Default to light mode if we can't detect
+        }
     }
 
     /**

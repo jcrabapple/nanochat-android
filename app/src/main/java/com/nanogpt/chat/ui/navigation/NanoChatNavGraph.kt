@@ -3,143 +3,151 @@ package com.nanogpt.chat.ui.navigation
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.nanogpt.chat.data.local.SecureStorage
 import com.nanogpt.chat.ui.auth.setup.SetupScreen
 import com.nanogpt.chat.ui.assistants.AssistantsScreen
 import com.nanogpt.chat.ui.chat.ChatScreen
 import com.nanogpt.chat.ui.conversations.ConversationsListScreen
 import com.nanogpt.chat.ui.projects.ProjectsScreen
 import com.nanogpt.chat.ui.settings.SettingsScreen
+import com.nanogpt.chat.ui.theme.ThemeManager
 
 @Composable
 fun NanoChatNavGraph(
-    navController: NavHostController = rememberNavController()
+    navController: NavHostController = rememberNavController(),
+    themeManager: ThemeManager,
+    secureStorage: SecureStorage
 ) {
-    val navViewModel: NavViewModel = hiltViewModel()
-    var startDestination by remember { mutableStateOf<String?>(null) }
+    // Determine start destination directly from SecureStorage
+    val startDestination = remember {
+        val backendUrl = secureStorage.getBackendUrl()
+        val apiKey = secureStorage.getSessionToken()
 
-    // Determine start destination
-    LaunchedEffect(Unit) {
-        startDestination = navViewModel.getStartDestination()
+        when {
+            backendUrl == null || apiKey == null -> Screen.Setup.route
+            else -> {
+                val lastConversationId = secureStorage.getLastConversationId()
+                if (lastConversationId != null) {
+                    Screen.Chat.createRoute(lastConversationId)
+                } else {
+                    "chat" // New chat
+                }
+            }
+        }
     }
 
-    if (startDestination != null) {
-        NavHost(
-            navController = navController,
-            startDestination = startDestination!!
+    NavHost(
+        navController = navController,
+        startDestination = startDestination
+    ) {
+        composable(Screen.Setup.route) {
+            SetupScreen(
+                themeManager = themeManager,
+                onComplete = {
+                    navController.navigate("chat") {
+                        popUpTo(Screen.Setup.route) { inclusive = true }
+                    }
+                }
+            )
+        }
+
+        // Route for new conversation (no ID)
+        composable(
+            route = "chat"
         ) {
-            composable(Screen.Setup.route) {
-                SetupScreen(
-                    onComplete = {
+            ChatScreen(
+                conversationId = null,
+                onNavigateBack = {
+                    navController.popBackStack()
+                },
+                onNavigateToConversation = { convId ->
+                    if (convId != null) {
+                        navController.navigate(Screen.Chat.createRoute(convId)) {
+                            popUpTo("chat") { inclusive = true }
+                        }
+                    } else {
                         navController.navigate("chat") {
-                            popUpTo(Screen.Setup.route) { inclusive = true }
+                            popUpTo("chat") { inclusive = true }
                         }
                     }
-                )
-            }
+                },
+                onNavigateToSettings = {
+                    navController.navigate(Screen.Settings.route)
+                },
+                onNavigateToAssistants = {
+                    navController.navigate(Screen.Assistants.route)
+                },
+                onNavigateToProjects = {
+                    navController.navigate(Screen.Projects.route)
+                },
+                themeManager = themeManager
+            )
+        }
 
-            // Route for new conversation (no ID)
-            composable(
-                route = "chat"
-            ) {
-                ChatScreen(
-                    conversationId = null,
-                    onNavigateBack = {
-                        navController.popBackStack()
-                    },
-                    onNavigateToConversation = { convId ->
-                        if (convId != null) {
-                            navController.navigate(Screen.Chat.createRoute(convId)) {
-                                popUpTo("chat") { inclusive = true }
-                            }
-                        } else {
-                            navController.navigate("chat") {
-                                popUpTo("chat") { inclusive = true }
-                            }
+        // Route for existing conversation (with ID)
+        composable(
+            route = "chat/{conversationId}"
+        ) {
+            ChatScreen(
+                conversationId = it.arguments?.getString("conversationId") ?: "",
+                onNavigateBack = {
+                    navController.popBackStack()
+                },
+                onNavigateToConversation = { convId ->
+                    if (convId != null) {
+                        navController.navigate(Screen.Chat.createRoute(convId)) {
+                            popUpTo("chat/{conversationId}") { inclusive = true }
                         }
-                    },
-                    onNavigateToSettings = {
-                        navController.navigate(Screen.Settings.route)
-                    },
-                    onNavigateToAssistants = {
-                        navController.navigate(Screen.Assistants.route)
-                    },
-                    onNavigateToProjects = {
-                        navController.navigate(Screen.Projects.route)
-                    },
-                    themeManager = navViewModel.themeManager
-                )
-            }
-
-            // Route for existing conversation (with ID)
-            composable(
-                route = "chat/{conversationId}"
-            ) {
-                ChatScreen(
-                    conversationId = it.arguments?.getString("conversationId") ?: "",
-                    onNavigateBack = {
-                        navController.popBackStack()
-                    },
-                    onNavigateToConversation = { convId ->
-                        if (convId != null) {
-                            navController.navigate(Screen.Chat.createRoute(convId)) {
-                                popUpTo("chat/{conversationId}") { inclusive = true }
-                            }
-                        } else {
-                            navController.navigate("chat") {
-                                popUpTo("chat/{conversationId}") { inclusive = true }
-                            }
+                    } else {
+                        navController.navigate("chat") {
+                            popUpTo("chat/{conversationId}") { inclusive = true }
                         }
-                    },
-                    onNavigateToSettings = {
-                        navController.navigate(Screen.Settings.route)
-                    },
-                    onNavigateToAssistants = {
-                        navController.navigate(Screen.Assistants.route)
-                    },
-                    onNavigateToProjects = {
-                        navController.navigate(Screen.Projects.route)
-                    },
-                    themeManager = navViewModel.themeManager
-                )
-            }
-
-            composable(Screen.Assistants.route) {
-                AssistantsScreen(
-                    onNavigateBack = {
-                        navController.popBackStack()
                     }
-                )
-            }
+                },
+                onNavigateToSettings = {
+                    navController.navigate(Screen.Settings.route)
+                },
+                onNavigateToAssistants = {
+                    navController.navigate(Screen.Assistants.route)
+                },
+                onNavigateToProjects = {
+                    navController.navigate(Screen.Projects.route)
+                },
+                themeManager = themeManager
+            )
+        }
 
-            composable(Screen.Projects.route) {
-                ProjectsScreen(
-                    onNavigateBack = {
-                        navController.popBackStack()
-                    }
-                )
-            }
+        composable(Screen.Assistants.route) {
+            AssistantsScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                }
+            )
+        }
 
-            composable(Screen.Settings.route) {
-                SettingsScreen(
-                    onNavigateBack = {
-                        navController.popBackStack()
-                    },
-                    onNavigateToAssistants = {
-                        navController.navigate(Screen.Assistants.route)
-                    }
-                )
-            }
+        composable(Screen.Projects.route) {
+            ProjectsScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                }
+            )
+        }
+
+        composable(Screen.Settings.route) {
+            SettingsScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                },
+                onNavigateToAssistants = {
+                    navController.navigate(Screen.Assistants.route)
+                }
+            )
         }
     }
 }
