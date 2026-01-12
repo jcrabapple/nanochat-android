@@ -91,3 +91,8 @@ lint/tmp/
 # Android Profiling
 *.hprof
 rikkahub/
+
+# Markdown files (except important project docs)
+*.md
+!README.md
+!SECURITY.md
