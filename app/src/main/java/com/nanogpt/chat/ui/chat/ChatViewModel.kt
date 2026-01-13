@@ -166,7 +166,7 @@ class ChatViewModel @Inject constructor(
         }
     }
 
-    private suspend fun sendMessageInternal(message: String) {
+    private suspend fun sendMessageInternal(message: String, skipUserMessage: Boolean = false) {
         try {
             // Start generation
             isGenerating = true
@@ -174,22 +174,24 @@ class ChatViewModel @Inject constructor(
             currentAssistantMessage = StringBuilder()
             currentReasoning = StringBuilder()
 
-            // For existing conversations, add user message locally
+            // For existing conversations, add user message locally (unless skipping for regeneration)
             val currentConversationId = conversationId
-            if (currentConversationId != null) {
-                val userMessageResult = messageRepository.createUserMessage(currentConversationId, message)
-                userMessageResult.onSuccess { userMessage ->
-                    _messages.value = _messages.value + userMessage.toDomain()
+            if (!skipUserMessage) {
+                if (currentConversationId != null) {
+                    val userMessageResult = messageRepository.createUserMessage(currentConversationId, message)
+                    userMessageResult.onSuccess { userMessage ->
+                        _messages.value = _messages.value + userMessage.toDomain()
+                    }
+                } else {
+                    // For new conversations, just show user message in UI
+                    _messages.value = _messages.value + Message(
+                        id = java.util.UUID.randomUUID().toString(),
+                        conversationId = "",
+                        role = "user",
+                        content = message,
+                        createdAt = System.currentTimeMillis()
+                    )
                 }
-            } else {
-                // For new conversations, just show user message in UI
-                _messages.value = _messages.value + Message(
-                    id = java.util.UUID.randomUUID().toString(),
-                    conversationId = "",
-                    role = "user",
-                    content = message,
-                    createdAt = System.currentTimeMillis()
-                )
             }
 
             // Add placeholder for assistant message
@@ -482,8 +484,8 @@ class ChatViewModel @Inject constructor(
                     // Delete from database
                     messageRepository.deleteMessage(lastAssistantMessage.id)
 
-                    // Regenerate with the same user message
-                    sendMessageInternal(userMessage.content)
+                    // Regenerate with the same user message, but skip adding it to UI/database
+                    sendMessageInternal(userMessage.content, skipUserMessage = true)
                 }
             }
         }
