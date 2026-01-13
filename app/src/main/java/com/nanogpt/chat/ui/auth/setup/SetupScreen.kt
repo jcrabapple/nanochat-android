@@ -8,8 +8,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material3.Button
@@ -45,10 +48,13 @@ fun SetupScreen(
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
+            // Allow content to flow under system bars (keyboard, status bar)
+            androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
+
             val statusBarColor = if (isSystemInDarkTheme) {
-                android.graphics.Color.parseColor("#1e1e2e") // Dark background
+                android.graphics.Color.BLACK
             } else {
-                android.graphics.Color.parseColor("#EFF1F5") // Light background
+                android.graphics.Color.WHITE
             }
             window.statusBarColor = statusBarColor
 
@@ -66,25 +72,11 @@ fun SetupScreen(
         }
     }
 
-    // Define color schemes based on system theme
+    // Use system default Material 3 color scheme
     val colorScheme = if (isSystemInDarkTheme) {
-        darkColorScheme(
-            primary = androidx.compose.ui.graphics.Color(0xFFcba6f7), // Mauve
-            secondary = androidx.compose.ui.graphics.Color(0xFFb4befe), // Lavender
-            background = androidx.compose.ui.graphics.Color(0xFF1e1e2e), // Dark background
-            surface = androidx.compose.ui.graphics.Color(0xFF181825), // Dark surface
-            onBackground = androidx.compose.ui.graphics.Color(0xFFcdd6f4), // Text
-            onSurface = androidx.compose.ui.graphics.Color(0xFFbac2de), // Subtext
-        )
+        darkColorScheme()
     } else {
-        lightColorScheme(
-            primary = androidx.compose.ui.graphics.Color(0xFF8839ef), // Mauve
-            secondary = androidx.compose.ui.graphics.Color(0xFF7287fd), // Lavender
-            background = androidx.compose.ui.graphics.Color(0xFFEFF1F5), // Light background
-            surface = androidx.compose.ui.graphics.Color(0xFFe6e9ef), // Light surface
-            onBackground = androidx.compose.ui.graphics.Color(0xFF4c4f69), // Text
-            onSurface = androidx.compose.ui.graphics.Color(0xFF5c5f77), // Subtext
-        )
+        lightColorScheme()
     }
 
     MaterialTheme(colorScheme = colorScheme) {
@@ -95,7 +87,9 @@ fun SetupScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(24.dp),
+                    .padding(24.dp)
+                    .verticalScroll(rememberScrollState())
+                    .imePadding(),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(24.dp, Alignment.CenterVertically)
             ) {

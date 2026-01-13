@@ -79,7 +79,6 @@ object NetworkModule {
     }
 
     @Provides
-    @Singleton
     fun provideRetrofit(
         okHttpClient: OkHttpClient,
         json: Json,
@@ -95,13 +94,11 @@ object NetworkModule {
     }
 
     @Provides
-    @Singleton
     fun provideNanoChatApi(retrofit: Retrofit): NanoChatApi {
         return retrofit.create(NanoChatApi::class.java)
     }
 
     @Provides
-    @Singleton
     fun provideWebSearchApi(retrofit: Retrofit): WebSearchApi {
         return retrofit.create(WebSearchApi::class.java)
     }
