@@ -71,14 +71,15 @@ val ASSISTANT_ICONS = listOf(
 @Composable
 fun AssistantDialog(
     assistant: AssistantEntity? = null,
-    onCreate: (String, String, String, Boolean, String?, String?, Double?, Double?, String) -> Unit,
-    onUpdate: (String, String, String, Boolean, String?, String?, Double?, Double?, String) -> Unit,
+    onCreate: (String, String, String, String?, Boolean, String?, String?, Double?, Double?, String) -> Unit,
+    onUpdate: (String, String, String, String?, Boolean, String?, String?, Double?, Double?, String) -> Unit,
     onDismiss: () -> Unit,
     availableModels: List<Pair<String, String>> = emptyList() // List of (modelId, modelName)
 ) {
     val navigationBarsPadding = WindowInsets.navigationBars.asPaddingValues()
 
     var name by remember { mutableStateOf(assistant?.name ?: "") }
+    var description by remember { mutableStateOf(assistant?.description ?: "") }
     var instructions by remember { mutableStateOf(assistant?.instructions ?: "") }
     var modelId by remember { mutableStateOf(assistant?.modelId ?: "gpt-4o-mini") }
     var webSearchEnabled by remember { mutableStateOf(assistant?.webSearchEnabled ?: false) }
@@ -156,6 +157,17 @@ fun AssistantDialog(
                         label = { Text("Name *") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
+                    )
+
+                    // Description
+                    OutlinedTextField(
+                        value = description,
+                        onValueChange = { description = it },
+                        label = { Text("Description (optional)") },
+                        placeholder = { Text("Brief description of this assistant...") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        maxLines = 1
                     )
 
                     // Instructions
@@ -449,6 +461,7 @@ fun AssistantDialog(
                                         name,
                                         instructions,
                                         modelId,
+                                        description.takeIf { it.isNotBlank() },
                                         webSearchEnabled,
                                         webSearchProvider.takeIf { it.isNotBlank() },
                                         webSearchMode,
@@ -461,6 +474,7 @@ fun AssistantDialog(
                                         name,
                                         instructions,
                                         modelId,
+                                        description.takeIf { it.isNotBlank() },
                                         webSearchEnabled,
                                         webSearchProvider.takeIf { it.isNotBlank() },
                                         webSearchMode,

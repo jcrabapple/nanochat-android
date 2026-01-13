@@ -32,6 +32,7 @@ class AssistantRepository @Inject constructor(
         name: String,
         instructions: String,
         modelId: String,
+        description: String? = null,
         webSearchEnabled: Boolean,
         webSearchProvider: String?,
         temperature: Double? = null,
@@ -44,7 +45,7 @@ class AssistantRepository @Inject constructor(
             val localAssistant = AssistantEntity(
                 id = java.util.UUID.randomUUID().toString(),
                 name = name,
-                description = null,
+                description = description,  // Store description locally
                 instructions = instructions,
                 modelId = modelId,
                 webSearchEnabled = webSearchEnabled,
@@ -75,7 +76,7 @@ class AssistantRepository @Inject constructor(
                 val response = api.createAssistant(
                     CreateAssistantRequest(
                         name = name,
-                        description = null,
+                        description = null,  // Description not sent to backend
                         systemPrompt = instructions,  // Map: instructions -> systemPrompt
                         defaultModelId = modelId,  // Map: modelId -> defaultModelId
                         defaultWebSearchMode = defaultWebSearchMode,  // Map: webSearchEnabled + webSearchMode -> defaultWebSearchMode
@@ -92,8 +93,9 @@ class AssistantRepository @Inject constructor(
                     val dto = response.body()!!
 
                     // Delete the local temporary assistant and insert/update with server data
+                    // But preserve the description we set locally
                     assistantDao.deleteAssistantById(localAssistant.id)
-                    val serverAssistant = dto.toEntity()
+                    val serverAssistant = dto.toEntity().copy(description = description)
                     assistantDao.insertAssistant(serverAssistant)
                     Result.success(serverAssistant)
                 } else {
@@ -112,6 +114,7 @@ class AssistantRepository @Inject constructor(
         name: String? = null,
         instructions: String? = null,
         modelId: String? = null,
+        description: String? = null,
         webSearchEnabled: Boolean? = null,
         webSearchProvider: String? = null,
         temperature: Double? = null,
@@ -125,6 +128,7 @@ class AssistantRepository @Inject constructor(
                 val updated = existing.copy(
                     name = name ?: existing.name,
                     instructions = instructions ?: existing.instructions,
+                    description = description ?: existing.description,  // Update description locally
                     modelId = modelId ?: existing.modelId,
                     webSearchEnabled = webSearchEnabled ?: existing.webSearchEnabled,
                     webSearchProvider = webSearchProvider ?: existing.webSearchProvider,
@@ -136,15 +140,15 @@ class AssistantRepository @Inject constructor(
                     syncStatus = SyncStatus.PENDING
                 )
                 assistantDao.updateAssistant(updated)
-                
-                // Sync with backend
+
+                // Sync with backend (excluding description)
                 try {
                     val defaultWebSearchMode = if (updated.webSearchEnabled) {
                         updated.webSearchMode ?: "standard"
                     } else {
                         "off"
                     }
-                    
+
                     api.updateAssistant(
                         id = id,
                         updates = com.nanogpt.chat.data.remote.dto.AssistantUpdates(
