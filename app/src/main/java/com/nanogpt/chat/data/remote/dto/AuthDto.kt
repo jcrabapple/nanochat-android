@@ -1,6 +1,7 @@
 package com.nanogpt.chat.data.remote.dto
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
 
 @Serializable
 data class SignInRequest(
@@ -62,7 +63,7 @@ data class SettingsUpdates(
 data class MessageInteractionRequest(
     val messageId: String,
     val action: String, // "regenerate" | "edit" | "copy" | "share"
-    val metadata: Map<String, String>? = null
+    val metadata: JsonElement? = null
 )
 
 @Serializable
@@ -77,7 +78,7 @@ data class MessageInteractionDto(
     val messageId: String,
     val userId: String,
     val action: String,
-    val metadata: Map<String, String>?,
+    val metadata: JsonElement?,
     val createdAt: String
 )
 
