@@ -1,10 +1,10 @@
 package com.nanogpt.chat.ui.auth.setup
 
 import android.util.Log
+import androidx.annotation.Keep
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nanogpt.chat.data.local.SecureStorage
-import com.nanogpt.chat.ui.theme.ThemeManager
 import com.nanogpt.chat.utils.DebugLogger
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,11 +18,11 @@ import java.net.UnknownHostException
 import javax.inject.Inject
 import javax.net.ssl.SSLException
 
+@Keep
 @HiltViewModel
 class SetupViewModel @Inject constructor(
     private val secureStorage: SecureStorage,
-    private val debugLogger: DebugLogger,
-    val themeManager: ThemeManager
+    private val debugLogger: DebugLogger
 ) : ViewModel() {
 
     private val TAG = "SetupViewModel"
@@ -153,8 +153,10 @@ class SetupViewModel @Inject constructor(
 /**
  * Custom exception for setup errors
  */
+@Keep
 class SetupException(message: String, cause: Throwable? = null) : Exception(message, cause)
 
+@Keep
 data class SetupUiState(
     val backendUrl: String = "",
     val apiKey: String = "",

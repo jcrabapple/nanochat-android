@@ -1,8 +1,6 @@
 package com.nanogpt.chat.ui.theme
 
 import android.app.Activity
-import android.content.Context
-import android.content.res.Configuration
 import android.os.Build
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
@@ -30,22 +28,8 @@ class ThemeManager @Inject constructor(
     private val storage: SecureStorage
 ) {
     // StateFlow for reactive UI updates
-    // Use lazy initialization to avoid issues during Hilt injection
-    private val _isDarkMode = MutableStateFlow<Boolean>(false)
+    private val _isDarkMode = MutableStateFlow(storage.getUseDarkMode() ?: isSystemDarkThemeDefault())
     val isDarkMode: StateFlow<Boolean> = _isDarkMode.asStateFlow()
-
-    private var initialized = false
-    private val lock = Any()
-
-    private fun ensureInitialized() {
-        synchronized(lock) {
-            if (!initialized) {
-                val savedPreference = storage.getUseDarkMode()
-                _isDarkMode.value = savedPreference ?: isSystemInDarkTheme(storage)
-                initialized = true
-            }
-        }
-    }
 
     private val _lightTheme = MutableStateFlow(
         ThemeChoice.fromString(storage.getLightTheme(), ThemeChoice.defaultLightTheme())
@@ -63,9 +47,6 @@ class ThemeManager @Inject constructor(
      */
     @Composable
     fun getAppColorScheme(): ColorScheme {
-        // Ensure initialization before accessing theme
-        ensureInitialized()
-
         val context = LocalContext.current
         val isDark by isDarkMode.collectAsState()
         val lightTheme by lightTheme.collectAsState()
@@ -180,16 +161,12 @@ class ThemeManager @Inject constructor(
     }
 
     /**
-     * Detect if the system is currently in dark mode
+     * Get the default dark mode setting based on system
      */
-    private fun isSystemInDarkTheme(storage: SecureStorage): Boolean {
-        return try {
-            val context = storage.getContext()
-            val nightModeFlags = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
-            nightModeFlags == Configuration.UI_MODE_NIGHT_YES
-        } catch (e: Exception) {
-            false // Default to light mode if we can't detect
-        }
+    private fun isSystemDarkThemeDefault(): Boolean {
+        // We'll default to following system settings
+        // In the future, we could use android.provider.Settings.System
+        return false
     }
 
     /**
