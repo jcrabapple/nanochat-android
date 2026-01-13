@@ -50,6 +50,17 @@ class ChatViewModel @Inject constructor(
     private val conversationTitlePoller: ConversationTitlePoller
 ) : ViewModel() {
 
+    companion object {
+        /** Interval between message polling requests */
+        private const val POLLING_INTERVAL_MS = 500L
+        
+        /** Max consecutive empty polls before considering generation complete (3 seconds total) */
+        private const val MAX_EMPTY_POLLS = 6
+        
+        /** Default fallback model ID when no model is selected */
+        private const val DEFAULT_MODEL_ID = "zai-org/glm-4.7"
+    }
+
     private var conversationId: String? = savedStateHandle["conversationId"]
 
     private val _uiState = MutableStateFlow(ChatUiState())
@@ -65,6 +76,29 @@ class ChatViewModel @Inject constructor(
     private var currentReasoning: StringBuilder = StringBuilder()
     private var isGenerating = false
     private var titleGenerated = false // Track if title has been generated for this conversation
+    
+    /** Creates the default fallback models list when API fetch fails */
+    private fun createDefaultModels(): List<ModelInfo> = listOf(
+        ModelInfo("zai-org/glm-4.7", "GLM-4.7", "zai-org", getProviderLogoUrl("zai-org")),
+        ModelInfo("zai-org/glm-4.6v", "GLM-4.6v", "zai-org", getProviderLogoUrl("zai-org")),
+        ModelInfo("deepseek/deepseek-v3.2", "DeepSeek V3.2", "deepseek", getProviderLogoUrl("deepseek")),
+        ModelInfo("moonshotai/kimi-k2-thinking", "Kimi K2 Thinking", "moonshotai", getProviderLogoUrl("moonshotai"))
+    )
+    
+    /** Applies default models to UI state when API fetch fails */
+    private fun applyDefaultModels() {
+        val defaultModels = createDefaultModels()
+        val lastModelId = secureStorage.getLastModelId()
+        val selectedModel = if (lastModelId != null) {
+            defaultModels.find { it.id == lastModelId } ?: defaultModels.firstOrNull()
+        } else {
+            defaultModels.firstOrNull()
+        }
+        _uiState.value = _uiState.value.copy(
+            availableModels = defaultModels,
+            selectedModel = selectedModel
+        )
+    }
 
     init {
         fetchUserModels()
@@ -243,12 +277,11 @@ class ChatViewModel @Inject constructor(
         var polling = true
         var lastMessageCount = 0
         var emptyPolls = 0
-        val maxEmptyPolls = 6 // 3 seconds (6 * 500ms) - feels immediate but allows for brief pauses
         var lastContent = ""
 
         while (polling && isGenerating) {
             try {
-                kotlinx.coroutines.delay(500) // Poll every 500ms
+                kotlinx.coroutines.delay(POLLING_INTERVAL_MS)
 
                 // Fetch messages from API
                 val messagesResponse = api.getMessages(convId)
@@ -297,8 +330,8 @@ class ChatViewModel @Inject constructor(
                         dto.toDomain()
                     }
 
-                    // Stop polling if we have assistant message content and no new content for maxEmptyPolls consecutive polls
-                    if (lastAssistantMessage != null && currentContent.isNotEmpty() && emptyPolls >= maxEmptyPolls) {
+                    // Stop polling if we have assistant message content and no new content for MAX_EMPTY_POLLS consecutive polls
+                    if (lastAssistantMessage != null && currentContent.isNotEmpty() && emptyPolls >= MAX_EMPTY_POLLS) {
                         polling = false
                         isGenerating = false
                         _uiState.value = _uiState.value.copy(isGenerating = false)
@@ -595,43 +628,11 @@ class ChatViewModel @Inject constructor(
                     )
                 } else {
                     // If API call fails, use default models
-                    val defaultModels = listOf(
-                        ModelInfo("zai-org/glm-4.7", "GLM-4.7", "zai-org", getProviderLogoUrl("zai-org")),
-                        ModelInfo("zai-org/glm-4.6v", "GLM-4.6v", "zai-org", getProviderLogoUrl("zai-org")),
-                        ModelInfo("deepseek/deepseek-v3.2", "DeepSeek V3.2", "deepseek", getProviderLogoUrl("deepseek")),
-                        ModelInfo("moonshotai/kimi-k2-thinking", "Kimi K2 Thinking", "moonshotai", getProviderLogoUrl("moonshotai"))
-                    )
-                    val lastModelId = secureStorage.getLastModelId()
-                    val selectedModel = if (lastModelId != null) {
-                        defaultModels.find { it.id == lastModelId } ?: defaultModels.firstOrNull()
-                    } else {
-                        defaultModels.firstOrNull()
-                    }
-
-                    _uiState.value = _uiState.value.copy(
-                        availableModels = defaultModels,
-                        selectedModel = selectedModel
-                    )
+                    applyDefaultModels()
                 }
             } catch (e: Exception) {
                 // If fetch fails with exception, use default models
-                val defaultModels = listOf(
-                    ModelInfo("zai-org/glm-4.7", "GLM-4.7", "zai-org", getProviderLogoUrl("zai-org")),
-                    ModelInfo("zai-org/glm-4.6v", "GLM-4.6v", "zai-org", getProviderLogoUrl("zai-org")),
-                    ModelInfo("deepseek/deepseek-v3.2", "DeepSeek V3.2", "deepseek", getProviderLogoUrl("deepseek")),
-                    ModelInfo("moonshotai/kimi-k2-thinking", "Kimi K2 Thinking", "moonshotai", getProviderLogoUrl("moonshotai"))
-                )
-                val lastModelId = secureStorage.getLastModelId()
-                val selectedModel = if (lastModelId != null) {
-                    defaultModels.find { it.id == lastModelId } ?: defaultModels.firstOrNull()
-                } else {
-                    defaultModels.firstOrNull()
-                }
-
-                _uiState.value = _uiState.value.copy(
-                    availableModels = defaultModels,
-                    selectedModel = selectedModel
-                )
+                applyDefaultModels()
             }
         }
     }

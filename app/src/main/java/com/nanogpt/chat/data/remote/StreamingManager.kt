@@ -30,6 +30,11 @@ class StreamingManager @Inject constructor(
     private val secureStorage: SecureStorage
 ) {
 
+    companion object {
+        /** Maximum time to wait for data before timing out the stream (5 minutes) */
+        private const val STREAM_TIMEOUT_MS = 5 * 60 * 1000L
+    }
+
     // Track the current call for cancellation
     private var currentCall: okhttp3.Call? = null
 
@@ -91,7 +96,7 @@ class StreamingManager @Inject constructor(
                 while (currentCall?.isCanceled() != true && reader.readLine().also { line = it } != null) {
                     // Check for timeout (no data for 5 minutes)
                     val now = System.currentTimeMillis()
-                    if (now - lastEventTime > 300000) {
+                    if (now - lastEventTime > STREAM_TIMEOUT_MS) {
                         onEvent(StreamEvent.Error("Stream timeout after 5 minutes"))
                         break
                     }
