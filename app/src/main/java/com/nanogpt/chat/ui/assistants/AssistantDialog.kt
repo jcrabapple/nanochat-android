@@ -71,15 +71,14 @@ val ASSISTANT_ICONS = listOf(
 @Composable
 fun AssistantDialog(
     assistant: AssistantEntity? = null,
-    onCreate: (String, String, String, String, Boolean, String?, String?, Double?, Double?, Int?, Int?, String) -> Unit,
-    onUpdate: (String, String, String, String, Boolean, String?, String?, Double?, Double?, Int?, Int?, String) -> Unit,
+    onCreate: (String, String, String, Boolean, String?, String?, Double?, Double?, String) -> Unit,
+    onUpdate: (String, String, String, Boolean, String?, String?, Double?, Double?, String) -> Unit,
     onDismiss: () -> Unit,
     availableModels: List<Pair<String, String>> = emptyList() // List of (modelId, modelName)
 ) {
     val navigationBarsPadding = WindowInsets.navigationBars.asPaddingValues()
 
     var name by remember { mutableStateOf(assistant?.name ?: "") }
-    var description by remember { mutableStateOf(assistant?.description ?: "") }
     var instructions by remember { mutableStateOf(assistant?.instructions ?: "") }
     var modelId by remember { mutableStateOf(assistant?.modelId ?: "gpt-4o-mini") }
     var webSearchEnabled by remember { mutableStateOf(assistant?.webSearchEnabled ?: false) }
@@ -88,8 +87,6 @@ fun AssistantDialog(
 
     var temperature by remember { mutableStateOf(assistant?.temperature?.toFloat() ?: 0.7f) }
     var topP by remember { mutableStateOf(assistant?.topP?.toFloat() ?: 1.0f) }
-    var maxTokens by remember { mutableStateOf(TextFieldValue(assistant?.maxTokens?.toString() ?: "")) }
-    var contextSize by remember { mutableStateOf(TextFieldValue(assistant?.contextSize?.toString() ?: "")) }
     var reasoningEffort by remember { mutableStateOf(assistant?.reasoningEffort ?: "auto") }
 
     var showModelDropdown by remember { mutableStateOf(false) }
@@ -157,19 +154,6 @@ fun AssistantDialog(
                             }
                         },
                         label = { Text("Name *") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
-
-                    // Description
-                    OutlinedTextField(
-                        value = description,
-                        onValueChange = {
-                            description = it.replaceFirstChar { char ->
-                                if (char.isLowerCase()) char.titlecase() else char.toString()
-                            }
-                        },
-                        label = { Text("Description") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
@@ -307,26 +291,6 @@ fun AssistantDialog(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-
-                    // Max Tokens
-                    OutlinedTextField(
-                        value = maxTokens,
-                        onValueChange = { maxTokens = it },
-                        label = { Text("Max Tokens (Optional)") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        placeholder = { Text("Leave empty for default") }
-                    )
-
-                    // Context Size
-                    OutlinedTextField(
-                        value = contextSize,
-                        onValueChange = { contextSize = it },
-                        label = { Text("Context Message Count (Optional)") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        placeholder = { Text("Leave empty for default") }
-                    )
 
                     // Thinking Budget (Reasoning Effort)
                     Column {
@@ -477,15 +441,12 @@ fun AssistantDialog(
                         Spacer(modifier = Modifier.width(8.dp))
                         Button(
                             onClick = {
-                                val maxTokensInt = maxTokens.text.toIntOrNull()
-                                val contextSizeInt = contextSize.text.toIntOrNull()
                                 val tempDouble = if (temperature == 0.7f) null else temperature.toDouble()
                                 val topPDouble = if (topP == 1.0f) null else topP.toDouble()
 
                                 if (assistant == null) {
                                     onCreate(
                                         name,
-                                        description,
                                         instructions,
                                         modelId,
                                         webSearchEnabled,
@@ -493,14 +454,11 @@ fun AssistantDialog(
                                         webSearchMode,
                                         tempDouble,
                                         topPDouble,
-                                        maxTokensInt,
-                                        contextSizeInt,
                                         reasoningEffort
                                     )
                                 } else {
                                     onUpdate(
                                         name,
-                                        description,
                                         instructions,
                                         modelId,
                                         webSearchEnabled,
@@ -508,8 +466,6 @@ fun AssistantDialog(
                                         webSearchMode,
                                         tempDouble,
                                         topPDouble,
-                                        maxTokensInt,
-                                        contextSizeInt,
                                         reasoningEffort
                                     )
                                 }

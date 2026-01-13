@@ -80,32 +80,26 @@ class AssistantsViewModel @Inject constructor(
 
     fun createAssistant(
         name: String,
-        description: String,
         instructions: String,
         modelId: String,
         webSearchEnabled: Boolean,
         webSearchProvider: String?,
+        webSearchMode: String?,
         temperature: Double?,
         topP: Double?,
-        maxTokens: Int?,
-        contextSize: Int?,
-        reasoningEffort: String?,
-        webSearchMode: String?
+        reasoningEffort: String?
     ) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
 
             val result = assistantRepository.createAssistant(
                 name = name,
-                description = description.takeIf { it.isNotBlank() },
                 instructions = instructions,
                 modelId = modelId,
                 webSearchEnabled = webSearchEnabled,
                 webSearchProvider = webSearchProvider,
                 temperature = temperature,
                 topP = topP,
-                maxTokens = maxTokens,
-                contextSize = contextSize,
                 reasoningEffort = reasoningEffort,
                 webSearchMode = webSearchMode
             )
@@ -124,17 +118,14 @@ class AssistantsViewModel @Inject constructor(
     fun updateAssistant(
         id: String,
         name: String,
-        description: String,
         instructions: String,
         modelId: String,
         webSearchEnabled: Boolean,
         webSearchProvider: String?,
+        webSearchMode: String?,
         temperature: Double?,
         topP: Double?,
-        maxTokens: Int?,
-        contextSize: Int?,
-        reasoningEffort: String?,
-        webSearchMode: String?
+        reasoningEffort: String?
     ) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
@@ -142,15 +133,12 @@ class AssistantsViewModel @Inject constructor(
             val result = assistantRepository.updateAssistant(
                 id = id,
                 name = name.takeIf { it.isNotBlank() },
-                description = description.takeIf { it.isNotBlank() },
                 instructions = instructions.takeIf { it.isNotBlank() },
                 modelId = modelId.takeIf { it.isNotBlank() },
                 webSearchEnabled = webSearchEnabled,
                 webSearchProvider = webSearchProvider,
                 temperature = temperature,
                 topP = topP,
-                maxTokens = maxTokens,
-                contextSize = contextSize,
                 reasoningEffort = reasoningEffort,
                 webSearchMode = webSearchMode
             )

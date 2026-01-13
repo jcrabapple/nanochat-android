@@ -8,12 +8,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.core.view.WindowCompat
+import androidx.lifecycle.lifecycleScope
 import com.nanogpt.chat.data.local.SecureStorage
+import com.nanogpt.chat.data.repository.AssistantRepository
 import com.nanogpt.chat.data.sync.ConversationSyncWorker
 import com.nanogpt.chat.ui.navigation.NanoChatNavGraph
 import com.nanogpt.chat.ui.theme.NanoChatTheme
 import com.nanogpt.chat.ui.theme.ThemeManager
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -25,6 +28,9 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var secureStorage: SecureStorage
 
+    @Inject
+    lateinit var assistantRepository: AssistantRepository
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -33,6 +39,11 @@ class MainActivity : ComponentActivity() {
 
         // Schedule background conversation sync worker
         ConversationSyncWorker.schedule(this)
+
+        // Sync assistants from backend at launch
+        lifecycleScope.launch {
+            assistantRepository.refreshAssistants()
+        }
 
         setContent {
             NanoChatTheme(themeManager) {

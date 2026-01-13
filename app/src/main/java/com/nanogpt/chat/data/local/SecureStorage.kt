@@ -26,6 +26,7 @@ class SecureStorage(context: Context) {
         private const val KEY_USER_EMAIL = "user_email"
         private const val KEY_LAST_MODEL_ID = "last_model_id"
         private const val KEY_LAST_CONVERSATION_ID = "last_conversation_id"
+        private const val KEY_LAST_ASSISTANT_ID = "last_assistant_id"
 
         // TTS Settings (local only)
         private const val KEY_TTS_MODEL = "tts_model"
@@ -95,6 +96,18 @@ class SecureStorage(context: Context) {
 
     fun getLastConversationId(): String? {
         return sharedPreferences.getString(KEY_LAST_CONVERSATION_ID, null)
+    }
+
+    fun saveLastAssistantId(assistantId: String?) {
+        if (assistantId != null) {
+            sharedPreferences.edit().putString(KEY_LAST_ASSISTANT_ID, assistantId).apply()
+        } else {
+            sharedPreferences.edit().remove(KEY_LAST_ASSISTANT_ID).apply()
+        }
+    }
+
+    fun getLastAssistantId(): String? {
+        return sharedPreferences.getString(KEY_LAST_ASSISTANT_ID, null)
     }
 
     // TTS Settings (local storage only, not synced to backend)

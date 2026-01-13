@@ -651,6 +651,16 @@ class ChatViewModel @Inject constructor(
                         if (assistant != null) {
                             applyAssistantSettings(assistant)
                         }
+                    } else if (_uiState.value.selectedAssistant == null) {
+                        // For new chats, restore the last selected assistant
+                        val lastAssistantId = secureStorage.getLastAssistantId()
+                        if (lastAssistantId != null) {
+                            val lastAssistant = assistants.find { it.id == lastAssistantId }
+                            if (lastAssistant != null) {
+                                _uiState.value = _uiState.value.copy(selectedAssistant = lastAssistant)
+                                applyAssistantSettings(lastAssistant)
+                            }
+                        }
                     }
                 }
             } catch (e: Exception) {
@@ -661,6 +671,9 @@ class ChatViewModel @Inject constructor(
 
     fun selectAssistant(assistant: AssistantEntity?) {
         _uiState.value = _uiState.value.copy(selectedAssistant = assistant)
+        
+        // Persist the selection so new chats default to this assistant
+        secureStorage.saveLastAssistantId(assistant?.id)
 
         if (assistant != null) {
             applyAssistantSettings(assistant)

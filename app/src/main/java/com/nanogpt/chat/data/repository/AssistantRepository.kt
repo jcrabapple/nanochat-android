@@ -30,15 +30,12 @@ class AssistantRepository @Inject constructor(
 
     suspend fun createAssistant(
         name: String,
-        description: String?,
         instructions: String,
         modelId: String,
         webSearchEnabled: Boolean,
         webSearchProvider: String?,
         temperature: Double? = null,
         topP: Double? = null,
-        maxTokens: Int? = null,
-        contextSize: Int? = null,
         reasoningEffort: String? = null,
         webSearchMode: String? = null
     ): Result<AssistantEntity> {
@@ -47,7 +44,7 @@ class AssistantRepository @Inject constructor(
             val localAssistant = AssistantEntity(
                 id = java.util.UUID.randomUUID().toString(),
                 name = name,
-                description = description,
+                description = null,
                 instructions = instructions,
                 modelId = modelId,
                 webSearchEnabled = webSearchEnabled,
@@ -55,8 +52,8 @@ class AssistantRepository @Inject constructor(
                 icon = null,
                 temperature = temperature,
                 topP = topP,
-                maxTokens = maxTokens,
-                contextSize = contextSize,
+                maxTokens = null,
+                contextSize = null,
                 reasoningEffort = reasoningEffort,
                 webSearchMode = webSearchMode,
                 createdAt = System.currentTimeMillis(),
@@ -78,7 +75,7 @@ class AssistantRepository @Inject constructor(
                 val response = api.createAssistant(
                     CreateAssistantRequest(
                         name = name,
-                        description = description,
+                        description = null,
                         systemPrompt = instructions,  // Map: instructions -> systemPrompt
                         defaultModelId = modelId,  // Map: modelId -> defaultModelId
                         defaultWebSearchMode = defaultWebSearchMode,  // Map: webSearchEnabled + webSearchMode -> defaultWebSearchMode
@@ -86,8 +83,8 @@ class AssistantRepository @Inject constructor(
                         icon = null,
                         temperature = temperature,
                         topP = topP,
-                        maxTokens = maxTokens,
-                        contextSize = contextSize,
+                        maxTokens = null,
+                        contextSize = null,
                         reasoningEffort = reasoningEffort
                     )
                 )
@@ -113,15 +110,12 @@ class AssistantRepository @Inject constructor(
     suspend fun updateAssistant(
         id: String,
         name: String? = null,
-        description: String? = null,
         instructions: String? = null,
         modelId: String? = null,
         webSearchEnabled: Boolean? = null,
         webSearchProvider: String? = null,
         temperature: Double? = null,
         topP: Double? = null,
-        maxTokens: Int? = null,
-        contextSize: Int? = null,
         reasoningEffort: String? = null,
         webSearchMode: String? = null
     ): Result<Unit> {
@@ -130,21 +124,46 @@ class AssistantRepository @Inject constructor(
             if (existing != null) {
                 val updated = existing.copy(
                     name = name ?: existing.name,
-                    description = description ?: existing.description,
                     instructions = instructions ?: existing.instructions,
                     modelId = modelId ?: existing.modelId,
                     webSearchEnabled = webSearchEnabled ?: existing.webSearchEnabled,
                     webSearchProvider = webSearchProvider ?: existing.webSearchProvider,
                     temperature = temperature,
                     topP = topP,
-                    maxTokens = maxTokens,
-                    contextSize = contextSize,
                     reasoningEffort = reasoningEffort,
                     webSearchMode = webSearchMode,
                     updatedAt = System.currentTimeMillis(),
                     syncStatus = SyncStatus.PENDING
                 )
                 assistantDao.updateAssistant(updated)
+                
+                // Sync with backend
+                try {
+                    val defaultWebSearchMode = if (updated.webSearchEnabled) {
+                        updated.webSearchMode ?: "standard"
+                    } else {
+                        "off"
+                    }
+                    
+                    api.updateAssistant(
+                        id = id,
+                        updates = com.nanogpt.chat.data.remote.dto.AssistantUpdates(
+                            name = name,
+                            systemPrompt = instructions,
+                            defaultModelId = modelId,
+                            defaultWebSearchMode = defaultWebSearchMode,
+                            defaultWebSearchProvider = updated.webSearchProvider,
+                            temperature = temperature,
+                            topP = topP,
+                            reasoningEffort = reasoningEffort
+                        )
+                    )
+                    // Mark as synced if successful
+                    assistantDao.updateAssistant(updated.copy(syncStatus = SyncStatus.SYNCED))
+                } catch (e: Exception) {
+                    // Keep local changes even if sync fails
+                    android.util.Log.e("AssistantRepository", "Failed to sync assistant update", e)
+                }
             }
             Result.success(Unit)
         } catch (e: Exception) {

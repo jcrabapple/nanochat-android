@@ -101,11 +101,11 @@ fun AssistantsScreen(
 
     if (showCreateDialog) {
         AssistantDialog(
-            onCreate = { name: String, description: String, instructions: String, modelId: String, webSearchEnabled: Boolean, provider: String?, mode: String?, temp: Double?, topP: Double?, maxTokens: Int?, contextSize: Int?, reasoning: String ->
-                viewModel.createAssistant(name, description, instructions, modelId, webSearchEnabled, provider, temp, topP, maxTokens, contextSize, reasoning, mode)
+            onCreate = { name: String, instructions: String, modelId: String, webSearchEnabled: Boolean, provider: String?, mode: String?, temp: Double?, topP: Double?, reasoning: String ->
+                viewModel.createAssistant(name, instructions, modelId, webSearchEnabled, provider, mode, temp, topP, reasoning)
                 showCreateDialog = false
             },
-            onUpdate = { _: String, _: String, _: String, _: String, _: Boolean, _: String?, _: String?, _: Double?, _: Double?, _: Int?, _: Int?, _: String -> },
+            onUpdate = { _: String, _: String, _: String, _: Boolean, _: String?, _: String?, _: Double?, _: Double?, _: String -> },
             onDismiss = { showCreateDialog = false },
             availableModels = uiState.availableModels
         )
@@ -114,22 +114,19 @@ fun AssistantsScreen(
     if (editingAssistant != null) {
         AssistantDialog(
             assistant = editingAssistant,
-            onCreate = { _: String, _: String, _: String, _: String, _: Boolean, _: String?, _: String?, _: Double?, _: Double?, _: Int?, _: Int?, _: String -> },
-            onUpdate = { name: String, description: String, instructions: String, modelId: String, webSearchEnabled: Boolean, provider: String?, mode: String?, temp: Double?, topP: Double?, maxTokens: Int?, contextSize: Int?, reasoning: String ->
+            onCreate = { _: String, _: String, _: String, _: Boolean, _: String?, _: String?, _: Double?, _: Double?, _: String -> },
+            onUpdate = { name: String, instructions: String, modelId: String, webSearchEnabled: Boolean, provider: String?, mode: String?, temp: Double?, topP: Double?, reasoning: String ->
                 viewModel.updateAssistant(
                     editingAssistant!!.id,
                     name,
-                    description,
                     instructions,
                     modelId,
                     webSearchEnabled,
                     provider,
+                    mode,
                     temp,
                     topP,
-                    maxTokens,
-                    contextSize,
-                    reasoning,
-                    mode
+                    reasoning
                 )
                 editingAssistant = null
             },
