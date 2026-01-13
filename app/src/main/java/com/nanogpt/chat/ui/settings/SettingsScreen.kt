@@ -1418,7 +1418,7 @@ fun StarredSection(
     ) { padding ->
         Column(
             modifier = Modifier
-                .fillMaxSize()
+                .fillMaxWidth()
                 .padding(padding)
         ) {
             // Error banner
@@ -1443,8 +1443,9 @@ fun StarredSection(
             if (uiState.isLoadingStarred) {
                 Box(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(32.dp),
+                        .fillMaxWidth()
+                        .padding(32.dp)
+                        .weight(1f),
                     contentAlignment = Alignment.Center
                 ) {
                     CircularProgressIndicator()
@@ -1453,8 +1454,9 @@ fun StarredSection(
                 // Empty state
                 Box(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(32.dp),
+                        .fillMaxWidth()
+                        .padding(32.dp)
+                        .weight(1f),
                     contentAlignment = Alignment.Center
                 ) {
                     Column(
@@ -1483,7 +1485,9 @@ fun StarredSection(
             } else {
                 // Starred messages list
                 LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
