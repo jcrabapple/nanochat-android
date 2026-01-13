@@ -145,6 +145,9 @@ fun NanoChatNavGraph(
                 },
                 onNavigateToAssistants = {
                     navController.navigate(Screen.Assistants.route)
+                },
+                onNavigateToConversation = { conversationId ->
+                    navController.navigate(Screen.Chat.createRoute(conversationId))
                 }
             )
         }

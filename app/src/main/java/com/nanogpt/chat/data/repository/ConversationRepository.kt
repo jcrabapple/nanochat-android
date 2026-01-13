@@ -165,8 +165,11 @@ class ConversationRepository @Inject constructor(
                 if (message.starred == true) {
                     // Call API to unstar
                     api.updateMessage(
-                        message.id,
-                        com.nanogpt.chat.data.remote.dto.UpdateMessageRequest(starred = false)
+                        com.nanogpt.chat.data.remote.dto.UpdateMessageRequest(
+                            action = "setStarred",
+                            messageId = message.id,
+                            starred = false
+                        )
                     )
                 }
             }

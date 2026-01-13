@@ -38,6 +38,9 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Forum
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -108,7 +111,8 @@ enum class SettingsSection(
 fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
     onNavigateBack: () -> Unit = {},
-    onNavigateToAssistants: () -> Unit = {}
+    onNavigateToAssistants: () -> Unit = {},
+    onNavigateToConversation: (String) -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var selectedSection by remember { mutableStateOf<SettingsSection?>(null) }
@@ -120,7 +124,8 @@ fun SettingsScreen(
             viewModel = viewModel,
             settings = uiState.settings,
             onNavigateBack = { selectedSection = null },
-            onNavigateToAssistants = onNavigateToAssistants
+            onNavigateToAssistants = onNavigateToAssistants,
+            onNavigateToConversation = onNavigateToConversation
         )
     } else {
         // Main settings list screen
@@ -267,7 +272,8 @@ fun SettingsDetailScreen(
     viewModel: SettingsViewModel,
     settings: com.nanogpt.chat.data.remote.dto.UserSettingsDto?,
     onNavigateBack: () -> Unit,
-    onNavigateToAssistants: () -> Unit = {}
+    onNavigateToAssistants: () -> Unit = {},
+    onNavigateToConversation: (String) -> Unit = {}
 ) {
     // Handle Android back button/gesture
     BackHandler(onBack = onNavigateBack)
@@ -311,7 +317,8 @@ fun SettingsDetailScreen(
                     viewModel = viewModel
                 )
                 SettingsSection.STARRED -> StarredSection(
-                    viewModel = viewModel
+                    viewModel = viewModel,
+                    onNavigateToConversation = onNavigateToConversation
                 )
                 SettingsSection.ABOUT -> AboutSection()
                 else -> PlaceholderSection(section.displayName)
@@ -1394,10 +1401,10 @@ fun LinkItem(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StarredSection(
-    viewModel: SettingsViewModel = hiltViewModel()
+    viewModel: SettingsViewModel = hiltViewModel(),
+    onNavigateToConversation: (String) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
@@ -1406,21 +1413,11 @@ fun StarredSection(
         viewModel.fetchStarredMessages()
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Starred Messages") },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                )
-            )
-        }
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(padding)
-        ) {
+    // Don't use Column with weight modifiers inside the scrolling parent
+    // Just render the content directly
+    Box(
+        modifier = Modifier.fillMaxWidth()
+    ) {
             // Error banner
             uiState.starredError?.let { error ->
                 Surface(
@@ -1444,8 +1441,7 @@ fun StarredSection(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(32.dp)
-                        .weight(1f),
+                        .padding(32.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     CircularProgressIndicator()
@@ -1455,8 +1451,7 @@ fun StarredSection(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(32.dp)
-                        .weight(1f),
+                        .padding(32.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Column(
@@ -1483,18 +1478,15 @@ fun StarredSection(
                     }
                 }
             } else {
-                // Starred messages list
-                LazyColumn(
+                // Starred messages list - use Column instead of LazyColumn
+                // because we're inside a parent verticalScroll()
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f),
-                    contentPadding = PaddingValues(16.dp),
+                        .padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    items(
-                        items = uiState.starredMessages,
-                        key = { it.id }
-                    ) { message ->
+                    uiState.starredMessages.forEach { message ->
                         StarredMessageCard(
                             message = message,
                             onUnstar = {
@@ -1505,8 +1497,10 @@ fun StarredSection(
                                     Toast.LENGTH_SHORT
                                 ).show()
                             },
-                            onClick = {
-                                // Copy to clipboard
+                            onNavigateToConversation = {
+                                onNavigateToConversation(message.conversationId)
+                            },
+                            onCopy = {
                                 context.copyToClipboard(message.content, "Message")
                                 Toast.makeText(
                                     context,
@@ -1518,7 +1512,6 @@ fun StarredSection(
                     }
                 }
             }
-        }
     }
 }
 
@@ -1526,21 +1519,20 @@ fun StarredSection(
 fun StarredMessageCard(
     message: com.nanogpt.chat.ui.chat.Message,
     onUnstar: () -> Unit,
-    onClick: () -> Unit
+    onNavigateToConversation: () -> Unit,
+    onCopy: () -> Unit
 ) {
     Card(
-        modifier = Modifier
-            .fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         shape = RoundedCornerShape(12.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { onClick() }
                 .padding(16.dp)
         ) {
-            // Header with role and date
+            // Header with role and actions
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -1563,16 +1555,21 @@ fun StarredMessageCard(
                     )
                 }
 
-                IconButton(
-                    onClick = onUnstar,
-                    modifier = Modifier.size(32.dp)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Icon(
-                        Icons.Default.Star,
-                        contentDescription = "Unstar",
-                        modifier = Modifier.size(20.dp),
-                        tint = Color(0xFFFFD700) // Gold
-                    )
+                    // Unstar button
+                    IconButton(
+                        onClick = onUnstar,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Star,
+                            contentDescription = "Unstar",
+                            modifier = Modifier.size(18.dp),
+                            tint = Color(0xFFFFD700) // Gold
+                        )
+                    }
                 }
             }
 
@@ -1587,9 +1584,41 @@ fun StarredMessageCard(
                 overflow = TextOverflow.Ellipsis
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-            // Footer with conversation info
+            // Action buttons
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Navigate to conversation button
+                FilledTonalIconButton(
+                    onClick = onNavigateToConversation,
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Forum,
+                        contentDescription = "View in conversation",
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                // Copy to clipboard button
+                FilledTonalIconButton(
+                    onClick = onCopy,
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Icon(
+                        Icons.Default.ContentCopy,
+                        contentDescription = "Copy message",
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            // Footer with timestamp
             Text(
                 text = formatMessageTimestamp(message.createdAt),
                 style = MaterialTheme.typography.labelSmall,

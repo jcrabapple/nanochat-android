@@ -58,10 +58,15 @@ object NetworkModule {
                     .header("Content-Type", "application/json")
                     .header("Accept", "application/json")
 
-                // Add API key as Bearer token for NanoGPT
-                // The nanochat backend expects: Authorization: Bearer <api-key>
+                // Add API key as Bearer token for API authentication
+                // Backend uses Bearer token for API key auth (not cookies)
+                // Cookies are only for Better Auth session-based web login
                 secureStorage.getSessionToken()?.let { token ->
-                    requestBuilder.header("Authorization", "Bearer $token")
+                    // Clean token - remove any whitespace/newlines
+                    val cleanToken = token.trim().replace(Regex("\\s+"), "")
+
+                    // Add as Bearer token for API key authentication
+                    requestBuilder.header("Authorization", "Bearer $cleanToken")
                 }
 
                 chain.proceed(requestBuilder.build())

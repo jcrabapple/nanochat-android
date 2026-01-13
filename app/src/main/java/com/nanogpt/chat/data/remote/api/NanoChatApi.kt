@@ -126,11 +126,10 @@ interface NanoChatApi {
 
     // ============== Starred Messages ==============
     @GET("/api/starred-messages")
-    suspend fun getStarredMessages(): Response<StarredMessagesResponse>
+    suspend fun getStarredMessages(): Response<List<MessageDto>>
 
-    @PATCH("/api/db/messages/{id}")
+    @POST("/api/db/messages")
     suspend fun updateMessage(
-        @Path("id") messageId: String,
         @Body updates: UpdateMessageRequest
-    ): Response<MessageDto>
+    ): Response<SimpleSuccessResponse>
 }

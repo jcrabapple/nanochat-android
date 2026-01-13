@@ -45,7 +45,8 @@ class SetupViewModel @Inject constructor(
 
     fun testConnection(onSuccess: () -> Unit) {
         val url = _uiState.value.backendUrl.trim()
-        val apiKey = _uiState.value.apiKey.trim()
+        // Trim all whitespace including newlines from API key
+        val apiKey = _uiState.value.apiKey.trim().replace(Regex("\\s+"), "")
 
         // Validation checks
         when {

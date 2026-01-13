@@ -106,7 +106,7 @@ class MessageRepository @Inject constructor(
         return try {
             val response = api.getStarredMessages()
             if (response.isSuccessful && response.body() != null) {
-                Result.success(response.body()!!.messages)
+                Result.success(response.body()!!)
             } else {
                 Result.failure(Exception("Failed to fetch starred messages: ${response.code()}"))
             }
@@ -115,15 +115,24 @@ class MessageRepository @Inject constructor(
         }
     }
 
-    suspend fun toggleMessageStar(messageId: String, starred: Boolean): Result<MessageDto> {
+    suspend fun toggleMessageStar(messageId: String, starred: Boolean): Result<Unit> {
         return try {
-            val response = api.updateMessage(messageId, com.nanogpt.chat.data.remote.dto.UpdateMessageRequest(starred = starred))
+            val response = api.updateMessage(
+                com.nanogpt.chat.data.remote.dto.UpdateMessageRequest(
+                    action = "setStarred",
+                    messageId = messageId,
+                    starred = starred
+                )
+            )
             if (response.isSuccessful && response.body() != null) {
-                // Update local database
-                val messageDto = response.body()!!
-                val messageEntity = messageDto.toEntity(messageDto.conversationId)
-                messageDao.insertMessage(messageEntity)
-                Result.success(messageDto)
+                val successResponse = response.body()!!
+                if (successResponse.ok) {
+                    // Update the starred status in local database
+                    messageDao.updateMessageStarred(messageId, starred)
+                    Result.success(Unit)
+                } else {
+                    Result.failure(Exception("Failed to update message: Backend returned ok=false"))
+                }
             } else {
                 Result.failure(Exception("Failed to update message: ${response.code()}"))
             }

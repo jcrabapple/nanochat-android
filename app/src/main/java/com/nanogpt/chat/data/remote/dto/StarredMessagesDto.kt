@@ -11,5 +11,12 @@ data class StarredMessagesResponse(
 
 @Serializable
 data class UpdateMessageRequest(
-    val starred: Boolean? = null
+    val action: String,  // "setStarred"
+    val messageId: String,
+    val starred: Boolean
+)
+
+@Serializable
+data class SimpleSuccessResponse(
+    val ok: Boolean
 )

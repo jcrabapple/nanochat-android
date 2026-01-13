@@ -579,7 +579,7 @@ class ChatViewModel @Inject constructor(
     fun toggleStar(messageId: String, starred: Boolean) {
         viewModelScope.launch {
             messageRepository.toggleMessageStar(messageId, starred)
-                .onSuccess { updatedMessage ->
+                .onSuccess {
                     // Update the message in the list
                     _messages.value = _messages.value.map { msg ->
                         if (msg.id == messageId) {
