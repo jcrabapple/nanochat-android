@@ -471,6 +471,14 @@ class ChatViewModel @Inject constructor(
                 // Log the regenerate interaction
                 logMessageInteraction(lastAssistantMessage.id, "regenerate")
 
+                // If the message was starred, unstar it first
+                if (lastAssistantMessage.starred == true) {
+                    messageRepository.toggleMessageStar(lastAssistantMessage.id, false)
+                        .onFailure { e ->
+                            android.util.Log.e("ChatViewModel", "Failed to unstar message: ${e.message}")
+                        }
+                }
+
                 // Find the user message before the assistant message
                 val lastUserMessageIndex = messages.indexOfLast { it.role == "user" }
                 if (lastUserMessageIndex != -1 && lastUserMessageIndex < messages.indexOf(lastAssistantMessage)) {
