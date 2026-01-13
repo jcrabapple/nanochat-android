@@ -24,8 +24,8 @@ android {
         applicationId = "com.nanogpt.chat"
         minSdk = 26
         targetSdk = 35
-        versionCode = 14
-        versionName = "0.8.1"
+        versionCode = 15
+        versionName = "0.8.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
