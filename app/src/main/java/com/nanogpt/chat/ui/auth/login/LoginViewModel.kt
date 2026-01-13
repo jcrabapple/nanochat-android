@@ -2,6 +2,7 @@ package com.nanogpt.chat.ui.auth.login
 
 import android.util.Log
 import androidx.lifecycle.ViewModel
+import com.nanogpt.chat.BuildConfig
 import androidx.lifecycle.viewModelScope
 import com.nanogpt.chat.data.local.SecureStorage
 import com.nanogpt.chat.data.remote.api.NanoChatApi
@@ -37,17 +38,23 @@ class LoginViewModel @Inject constructor(
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
 
             try {
-                Log.d("LoginViewModel", "Saving API key: ${apiKey.take(20)}...")
+                if (BuildConfig.DEBUG) {
+                    Log.d("LoginViewModel", "Saving API key...")
+                }
                 // Save the API key to secure storage
                 secureStorage.saveSessionToken(apiKey)
 
                 // For now, just save the API key without validation
                 // The real validation will happen when making actual API calls
                 _uiState.value = _uiState.value.copy(isLoading = false)
-                Log.d("LoginViewModel", "API key saved successfully!")
+                if (BuildConfig.DEBUG) {
+                    Log.d("LoginViewModel", "API key saved successfully!")
+                }
                 onSuccess()
             } catch (e: Exception) {
-                Log.e("LoginViewModel", "Error saving API key", e)
+                if (BuildConfig.DEBUG) {
+                    Log.e("LoginViewModel", "Error saving API key", e)
+                }
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     error = "Error saving API key: ${e.message}"
