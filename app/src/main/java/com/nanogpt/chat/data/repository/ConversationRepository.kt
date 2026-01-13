@@ -8,6 +8,7 @@ import com.nanogpt.chat.data.remote.api.NanoChatApi
 import com.nanogpt.chat.data.remote.dto.ConversationDto
 import com.nanogpt.chat.data.remote.dto.CreateConversationRequest
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -136,6 +137,9 @@ class ConversationRepository @Inject constructor(
 
     suspend fun deleteConversation(id: String): Result<Unit> {
         return try {
+            // First, unstar all messages in this conversation to clean up starred messages
+            unstarAllMessagesInConversation(id)
+
             // Delete from API
             val response = api.deleteConversation(id)
             if (response.isSuccessful) {
@@ -145,6 +149,30 @@ class ConversationRepository @Inject constructor(
             }
         } catch (e: Exception) {
             Result.failure(e)
+        }
+    }
+
+    private suspend fun unstarAllMessagesInConversation(conversationId: String) {
+        try {
+            // Get all messages for this conversation
+            val messages = messageDao.getMessagesForConversation(conversationId)
+
+            // Collect the flow to get the actual list
+            val messageList = messages.first()
+
+            // Unstar all starred messages
+            messageList.forEach { message ->
+                if (message.starred == true) {
+                    // Call API to unstar
+                    api.updateMessage(
+                        message.id,
+                        com.nanogpt.chat.data.remote.dto.UpdateMessageRequest(starred = false)
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            // Log but don't fail the deletion if unstar fails
+            android.util.Log.e("ConversationRepository", "Failed to unstar messages: ${e.message}")
         }
     }
 
