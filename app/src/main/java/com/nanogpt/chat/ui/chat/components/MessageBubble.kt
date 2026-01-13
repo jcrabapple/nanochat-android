@@ -20,6 +20,8 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -51,6 +53,7 @@ fun MessageBubble(
     message: Message,
     onCopy: () -> Unit = {},
     onRegenerate: (() -> Unit)? = null,
+    onStar: ((Boolean) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val isUser = message.role == "user"
@@ -207,6 +210,25 @@ fun MessageBubble(
                                 contentDescription = "Regenerate",
                                 modifier = Modifier.size(16.dp),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                            )
+                        }
+                    }
+
+                    // Star button
+                    if (onStar != null) {
+                        IconButton(
+                            onClick = { onStar(!(message.starred == true)) },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                if (message.starred == true) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                                contentDescription = if (message.starred == true) "Unstar" else "Star",
+                                modifier = Modifier.size(16.dp),
+                                tint = if (message.starred == true) {
+                                    Color(0xFFFFD700) // Gold color for starred
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                }
                             )
                         }
                     }

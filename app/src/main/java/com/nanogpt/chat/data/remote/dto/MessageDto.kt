@@ -17,7 +17,8 @@ data class MessageDto(
     val followUpSuggestions: List<String>? = null,
     val createdAt: String,
     val tokenCount: Int? = null,
-    val costUsd: Double? = null
+    val costUsd: Double? = null,
+    val starred: Boolean? = null
 )
 
 @Serializable
@@ -39,6 +40,7 @@ fun MessageDto.toDomain(): Message {
             .parse(createdAt)
             .time,
         tokenCount = tokenCount,
-        annotations = annotations?.map { Annotation(it.type, it.data) }
+        annotations = annotations?.map { Annotation(it.type, it.data) },
+        starred = starred
     )
 }

@@ -54,6 +54,17 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
     }
 }
 
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        // Add starred column to messages table
+        database.execSQL(
+            """
+            ALTER TABLE messages ADD COLUMN starred INTEGER DEFAULT NULL
+            """
+        )
+    }
+}
+
 @Database(
     entities = [
         ConversationEntity::class,
@@ -61,7 +72,7 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
         AssistantEntity::class,
         ProjectEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = true
 )
 abstract class NanoChatDatabase : RoomDatabase() {

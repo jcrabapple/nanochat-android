@@ -123,4 +123,14 @@ interface NanoChatApi {
     suspend fun getModelPerformance(
         @Query("recalculate") recalculate: String? = null
     ): Response<ModelPerformanceResponseDto>
+
+    // ============== Starred Messages ==============
+    @GET("/api/starred-messages")
+    suspend fun getStarredMessages(): Response<StarredMessagesResponse>
+
+    @PATCH("/api/db/messages/{id}")
+    suspend fun updateMessage(
+        @Path("id") messageId: String,
+        @Body updates: UpdateMessageRequest
+    ): Response<MessageDto>
 }

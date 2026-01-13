@@ -18,6 +18,8 @@ import com.nanogpt.chat.data.remote.dto.NanoGptSubscriptionDto
 import com.nanogpt.chat.data.remote.dto.SettingsUpdates
 import com.nanogpt.chat.data.remote.dto.UserSettingsDto
 import com.nanogpt.chat.data.remote.dto.parseUserModelsResponse
+import com.nanogpt.chat.data.remote.dto.MessageDto
+import com.nanogpt.chat.data.remote.dto.toDomain
 import com.nanogpt.chat.ui.theme.ThemeManager
 import com.nanogpt.chat.utils.DebugLogger
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -35,7 +37,8 @@ class SettingsViewModel @Inject constructor(
     private val api: NanoChatApi,
     private val secureStorage: SecureStorage,
     val themeManager: ThemeManager,
-    private val debugLogger: DebugLogger
+    private val debugLogger: DebugLogger,
+    private val messageRepository: com.nanogpt.chat.data.repository.MessageRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
@@ -612,6 +615,52 @@ class SettingsViewModel @Inject constructor(
             }
         }
     }
+
+    fun fetchStarredMessages() {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoadingStarred = true, starredError = null)
+            try {
+                messageRepository.getStarredMessages()
+                    .onSuccess { messagesDto ->
+                        val messages = messagesDto.map { it.toDomain() }
+                        _uiState.value = _uiState.value.copy(
+                            starredMessages = messages,
+                            isLoadingStarred = false
+                        )
+                    }
+                    .onFailure { e ->
+                        _uiState.value = _uiState.value.copy(
+                            isLoadingStarred = false,
+                            starredError = e.message
+                        )
+                    }
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isLoadingStarred = false,
+                    starredError = e.message
+                )
+            }
+        }
+    }
+
+    fun toggleStarFromSettings(messageId: String, starred: Boolean) {
+        viewModelScope.launch {
+            messageRepository.toggleMessageStar(messageId, starred)
+                .onSuccess {
+                    // Refresh the starred messages list
+                    fetchStarredMessages()
+                }
+                .onFailure { e ->
+                    _uiState.value = _uiState.value.copy(
+                        starredError = "Failed to ${if (starred) "star" else "unstar"} message: ${e.message}"
+                    )
+                }
+        }
+    }
+
+    fun clearStarredError() {
+        _uiState.value = _uiState.value.copy(starredError = null)
+    }
 }
 
 data class SettingsUiState(
@@ -637,5 +686,9 @@ data class SettingsUiState(
     val modelPerformance: List<com.nanogpt.chat.data.remote.dto.ModelPerformanceStatsDto> = emptyList(),
     val overallStats: com.nanogpt.chat.data.remote.dto.OverallStatsDto? = null,
     val isLoadingModelPerformance: Boolean = false,
-    val modelPerformanceError: String? = null
+    val modelPerformanceError: String? = null,
+    // Starred Messages
+    val starredMessages: List<com.nanogpt.chat.ui.chat.Message> = emptyList(),
+    val isLoadingStarred: Boolean = false,
+    val starredError: String? = null
 )

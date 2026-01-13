@@ -101,6 +101,36 @@ class MessageRepository @Inject constructor(
     suspend fun getMessageCount(conversationId: String): Int {
         return messageDao.getMessageCount(conversationId)
     }
+
+    suspend fun getStarredMessages(): Result<List<MessageDto>> {
+        return try {
+            val response = api.getStarredMessages()
+            if (response.isSuccessful && response.body() != null) {
+                Result.success(response.body()!!.messages)
+            } else {
+                Result.failure(Exception("Failed to fetch starred messages: ${response.code()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun toggleMessageStar(messageId: String, starred: Boolean): Result<MessageDto> {
+        return try {
+            val response = api.updateMessage(messageId, com.nanogpt.chat.data.remote.dto.UpdateMessageRequest(starred = starred))
+            if (response.isSuccessful && response.body() != null) {
+                // Update local database
+                val messageDto = response.body()!!
+                val messageEntity = messageDto.toEntity(messageDto.conversationId)
+                messageDao.insertMessage(messageEntity)
+                Result.success(messageDto)
+            } else {
+                Result.failure(Exception("Failed to update message: ${response.code()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 }
 
 // Extension function to convert DTO to Entity
@@ -120,6 +150,7 @@ fun MessageDto.toEntity(conversationId: String): MessageEntity {
         createdAt = sdf.parse(createdAt)?.time ?: System.currentTimeMillis(),
         tokenCount = tokenCount,
         costUsd = costUsd,
+        starred = starred,
         syncStatus = SyncStatus.SYNCED
     )
 }

@@ -568,6 +568,29 @@ class ChatViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(error = null)
     }
 
+    fun toggleStar(messageId: String, starred: Boolean) {
+        viewModelScope.launch {
+            messageRepository.toggleMessageStar(messageId, starred)
+                .onSuccess { updatedMessage ->
+                    // Update the message in the list
+                    _messages.value = _messages.value.map { msg ->
+                        if (msg.id == messageId) {
+                            msg.copy(starred = starred)
+                        } else {
+                            msg
+                        }
+                    }
+                    // Log the interaction
+                    logMessageInteraction(messageId, if (starred) "star" else "unstar")
+                }
+                .onFailure { e ->
+                    _uiState.value = _uiState.value.copy(
+                        error = "Failed to ${if (starred) "star" else "unstar"} message: ${e.message}"
+                    )
+                }
+        }
+    }
+
     fun toggleWebSearch() {
         // If currently off, turn on with standard mode
         // If currently on, turn off
@@ -788,7 +811,8 @@ data class Message(
     val modelId: String? = null,
     val createdAt: Long,
     val tokenCount: Int? = null,
-    val annotations: List<Annotation>? = null
+    val annotations: List<Annotation>? = null,
+    val starred: Boolean? = null
 )
 
 data class Annotation(
@@ -821,6 +845,7 @@ fun MessageEntity.toDomain(): Message {
         modelId = modelId,
         createdAt = createdAt,
         tokenCount = tokenCount,
-        annotations = annotations
+        annotations = annotations,
+        starred = starred
     )
 }

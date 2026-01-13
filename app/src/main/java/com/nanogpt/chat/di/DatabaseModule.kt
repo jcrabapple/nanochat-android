@@ -3,6 +3,7 @@ package com.nanogpt.chat.di
 import android.content.Context
 import androidx.room.Room
 import com.nanogpt.chat.data.local.MIGRATION_1_2
+import com.nanogpt.chat.data.local.MIGRATION_2_3
 import com.nanogpt.chat.data.local.NanoChatDatabase
 import com.nanogpt.chat.data.local.dao.AssistantDao
 import com.nanogpt.chat.data.local.dao.ConversationDao
@@ -29,7 +30,7 @@ object DatabaseModule {
             NanoChatDatabase::class.java,
             "nanochat.db"
         )
-            .addMigrations(MIGRATION_1_2)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
             .fallbackToDestructiveMigration()
             .build()
     }

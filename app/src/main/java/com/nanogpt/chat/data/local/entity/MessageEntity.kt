@@ -18,5 +18,6 @@ data class MessageEntity(
     val createdAt: Long,
     val tokenCount: Int? = null,
     val costUsd: Double? = null,
+    val starred: Boolean? = null,
     val syncStatus: SyncStatus = SyncStatus.SYNCED
 )

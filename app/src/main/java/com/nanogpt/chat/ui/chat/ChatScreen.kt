@@ -337,6 +337,9 @@ fun ChatScreen(
                                 }
                             } else {
                                 null
+                            },
+                            onStar = { starred ->
+                                viewModel.toggleStar(message.id, starred)
                             }
                         )
                     }
