@@ -29,6 +29,8 @@ class ProjectRepository @Inject constructor(
 
     suspend fun createProject(
         name: String,
+        description: String? = null,
+        systemPrompt: String? = null,
         color: String? = null
     ): Result<ProjectEntity> {
         return try {
@@ -36,7 +38,9 @@ class ProjectRepository @Inject constructor(
             val localProject = ProjectEntity(
                 id = java.util.UUID.randomUUID().toString(),
                 name = name,
-                userId = "", // Will be filled by ViewModel
+                userId = "", // Will be filled by server
+                description = description,
+                systemPrompt = systemPrompt,
                 color = color,
                 createdAt = System.currentTimeMillis(),
                 updatedAt = System.currentTimeMillis(),
@@ -47,9 +51,18 @@ class ProjectRepository @Inject constructor(
 
             // Try to sync with server
             try {
-                val response = api.createProject(CreateProjectRequest(name, color))
+                val response = api.createProject(
+                    CreateProjectRequest(
+                        name = name,
+                        description = description,
+                        systemPrompt = systemPrompt,
+                        color = color
+                    )
+                )
                 if (response.isSuccessful && response.body() != null) {
                     val dto = response.body()!!
+                    // Delete local temp and insert server version
+                    projectDao.deleteProjectById(localProject.id)
                     val serverProject = dto.toEntity()
                     projectDao.insertProject(serverProject)
                     Result.success(serverProject)
@@ -67,6 +80,8 @@ class ProjectRepository @Inject constructor(
     suspend fun updateProject(
         id: String,
         name: String? = null,
+        description: String? = null,
+        systemPrompt: String? = null,
         color: String? = null
     ): Result<Unit> {
         return try {
@@ -74,11 +89,31 @@ class ProjectRepository @Inject constructor(
             if (existing != null) {
                 val updated = existing.copy(
                     name = name ?: existing.name,
+                    description = description ?: existing.description,
+                    systemPrompt = systemPrompt ?: existing.systemPrompt,
                     color = color ?: existing.color,
                     updatedAt = System.currentTimeMillis(),
                     syncStatus = SyncStatus.PENDING
                 )
                 projectDao.updateProject(updated)
+
+                // Sync with backend
+                try {
+                    api.updateProject(
+                        id = id,
+                        updates = com.nanogpt.chat.data.remote.dto.ProjectUpdates(
+                            name = name,
+                            description = description,
+                            systemPrompt = systemPrompt,
+                            color = color
+                        )
+                    )
+                    // Mark as synced if successful
+                    projectDao.updateProject(updated.copy(syncStatus = SyncStatus.SYNCED))
+                } catch (e: Exception) {
+                    // Keep local changes even if sync fails
+                    android.util.Log.e("ProjectRepository", "Failed to sync project update", e)
+                }
             }
             Result.success(Unit)
         } catch (e: Exception) {
@@ -90,8 +125,12 @@ class ProjectRepository @Inject constructor(
         return try {
             projectDao.deleteProjectById(id)
 
-            // Note: This won't delete conversations in the project
-            // They will just have a null project reference
+            // Also delete from server
+            try {
+                api.deleteProject(id)
+            } catch (e: Exception) {
+                // Ignore network errors
+            }
 
             Result.success(Unit)
         } catch (e: Exception) {
@@ -114,6 +153,62 @@ class ProjectRepository @Inject constructor(
             Result.failure(e)
         }
     }
+
+    /**
+     * Sync all pending projects to the server.
+     * Called on app startup and when user refreshes the project list.
+     */
+    suspend fun syncPendingProjects(): Result<Int> {
+        return try {
+            val pendingProjects = projectDao.getPendingProjects()
+            var syncedCount = 0
+
+            for (project in pendingProjects) {
+                try {
+                    val response = api.updateProject(
+                        id = project.id,
+                        updates = com.nanogpt.chat.data.remote.dto.ProjectUpdates(
+                            name = project.name,
+                            description = project.description,
+                            systemPrompt = project.systemPrompt,
+                            color = project.color
+                        )
+                    )
+
+                    if (response.isSuccessful) {
+                        // Update successful, mark as synced
+                        projectDao.updateProject(project.copy(syncStatus = SyncStatus.SYNCED))
+                        syncedCount++
+                    } else if (response.code() == 404) {
+                        // Project doesn't exist on server (new project), create it
+                        val createResponse = api.createProject(
+                            CreateProjectRequest(
+                                name = project.name,
+                                description = project.description,
+                                systemPrompt = project.systemPrompt,
+                                color = project.color
+                            )
+                        )
+
+                        if (createResponse.isSuccessful && createResponse.body() != null) {
+                            // Delete the local temporary project and insert with server data
+                            projectDao.deleteProjectById(project.id)
+                            val serverProject = createResponse.body()!!.toEntity()
+                            projectDao.insertProject(serverProject)
+                            syncedCount++
+                        }
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("ProjectRepository", "Failed to sync project ${project.id}", e)
+                    // Continue with next project
+                }
+            }
+
+            Result.success(syncedCount)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 }
 
 // Extension function to convert DTO to Entity
@@ -123,6 +218,8 @@ fun ProjectDto.toEntity(): ProjectEntity {
         id = id,
         name = name,
         userId = userId,
+        description = description,
+        systemPrompt = systemPrompt,
         color = color,
         createdAt = sdf.parse(createdAt)?.time ?: System.currentTimeMillis(),
         updatedAt = sdf.parse(updatedAt)?.time ?: System.currentTimeMillis(),

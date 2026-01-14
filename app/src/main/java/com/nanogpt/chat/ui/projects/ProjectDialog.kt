@@ -11,8 +11,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
@@ -37,11 +39,13 @@ import com.nanogpt.chat.data.local.entity.ProjectEntity
 @Composable
 fun ProjectDialog(
     project: ProjectEntity? = null,
-    onCreate: (String, String?) -> Unit,
-    onUpdate: (String, String?) -> Unit,
+    onCreate: (String, String?, String?, String?) -> Unit,
+    onUpdate: (String, String?, String?, String?) -> Unit,
     onDismiss: () -> Unit
 ) {
     var name by remember { mutableStateOf(project?.name ?: "") }
+    var description by remember { mutableStateOf(project?.description ?: "") }
+    var systemPrompt by remember { mutableStateOf(project?.systemPrompt ?: "") }
     var selectedColor by remember { mutableStateOf(project?.color ?: "") }
 
     val projectColors = listOf(
@@ -78,6 +82,7 @@ fun ProjectDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(24.dp)
+                    .verticalScroll(rememberScrollState())
             ) {
                 Text(
                     text = if (project == null) "Create Project" else "Edit Project",
@@ -96,6 +101,26 @@ fun ProjectDialog(
                         label = { Text("Project Name *") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
+                    )
+
+                    // Description
+                    OutlinedTextField(
+                        value = description,
+                        onValueChange = { description = it },
+                        label = { Text("Description (optional)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 2,
+                        maxLines = 4
+                    )
+
+                    // System Prompt
+                    OutlinedTextField(
+                        value = systemPrompt,
+                        onValueChange = { systemPrompt = it },
+                        label = { Text("System Prompt (optional)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 3,
+                        maxLines = 6
                     )
 
                     // Color Selection
@@ -148,10 +173,12 @@ fun ProjectDialog(
                         Button(
                             onClick = {
                                 val color = selectedColor.takeIf { it.isNotBlank() }
+                                val desc = description.takeIf { it.isNotBlank() }
+                                val prompt = systemPrompt.takeIf { it.isNotBlank() }
                                 if (project == null) {
-                                    onCreate(name, color)
+                                    onCreate(name, desc, prompt, color)
                                 } else {
-                                    onUpdate(name, color)
+                                    onUpdate(name, desc, prompt, color)
                                 }
                             },
                             enabled = name.isNotBlank()

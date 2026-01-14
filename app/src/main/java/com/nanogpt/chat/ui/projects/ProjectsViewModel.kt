@@ -23,6 +23,7 @@ class ProjectsViewModel @Inject constructor(
 
     init {
         observeProjects()
+        syncPendingProjects()
     }
 
     private fun observeProjects() {
@@ -38,6 +39,8 @@ class ProjectsViewModel @Inject constructor(
 
     fun createProject(
         name: String,
+        description: String? = null,
+        systemPrompt: String? = null,
         color: String?
     ) {
         viewModelScope.launch {
@@ -47,6 +50,8 @@ class ProjectsViewModel @Inject constructor(
 
             val result = projectRepository.createProject(
                 name = name,
+                description = description,
+                systemPrompt = systemPrompt,
                 color = color
             )
 
@@ -64,6 +69,8 @@ class ProjectsViewModel @Inject constructor(
     fun updateProject(
         id: String,
         name: String,
+        description: String? = null,
+        systemPrompt: String? = null,
         color: String?
     ) {
         viewModelScope.launch {
@@ -72,6 +79,8 @@ class ProjectsViewModel @Inject constructor(
             val result = projectRepository.updateProject(
                 id = id,
                 name = name.takeIf { it.isNotBlank() },
+                description = description,
+                systemPrompt = systemPrompt,
                 color = color
             )
 
@@ -104,12 +113,30 @@ class ProjectsViewModel @Inject constructor(
             _uiState.value = _uiState.value.copy(isLoading = true)
             try {
                 projectRepository.refreshProjects()
+                syncPendingProjects()
                 _uiState.value = _uiState.value.copy(isLoading = false)
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     error = e.message
                 )
+            }
+        }
+    }
+
+    private fun syncPendingProjects() {
+        viewModelScope.launch {
+            try {
+                val result = projectRepository.syncPendingProjects()
+                result.onSuccess { count ->
+                    if (count > 0) {
+                        android.util.Log.d("ProjectsViewModel", "Synced $count pending projects")
+                    }
+                }.onFailure { e ->
+                    android.util.Log.e("ProjectsViewModel", "Failed to sync pending projects", e)
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("ProjectsViewModel", "Error syncing pending projects", e)
             }
         }
     }

@@ -15,6 +15,7 @@ import androidx.core.view.WindowCompat
 import androidx.lifecycle.lifecycleScope
 import com.nanogpt.chat.data.local.SecureStorage
 import com.nanogpt.chat.data.repository.AssistantRepository
+import com.nanogpt.chat.data.repository.ProjectRepository
 import com.nanogpt.chat.data.sync.ConversationSyncWorker
 import com.nanogpt.chat.ui.navigation.NanoChatNavGraph
 import com.nanogpt.chat.ui.theme.NanoChatTheme
@@ -35,6 +36,9 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var assistantRepository: AssistantRepository
 
+    @Inject
+    lateinit var projectRepository: ProjectRepository
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -44,10 +48,12 @@ class MainActivity : ComponentActivity() {
         // Schedule background conversation sync worker
         ConversationSyncWorker.schedule(this)
 
-        // Sync assistants from backend at launch
+        // Sync assistants and projects from backend at launch
         lifecycleScope.launch {
             assistantRepository.refreshAssistants()
             assistantRepository.syncPendingAssistants()
+            projectRepository.refreshProjects()
+            projectRepository.syncPendingProjects()
         }
 
         setContent {

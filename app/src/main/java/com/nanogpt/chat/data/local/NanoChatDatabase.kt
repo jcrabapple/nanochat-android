@@ -65,6 +65,22 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
     }
 }
 
+val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        // Add description and systemPrompt columns to projects table
+        database.execSQL(
+            """
+            ALTER TABLE projects ADD COLUMN description TEXT DEFAULT NULL
+            """
+        )
+        database.execSQL(
+            """
+            ALTER TABLE projects ADD COLUMN systemPrompt TEXT DEFAULT NULL
+            """
+        )
+    }
+}
+
 @Database(
     entities = [
         ConversationEntity::class,
@@ -72,7 +88,7 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
         AssistantEntity::class,
         ProjectEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = true
 )
 abstract class NanoChatDatabase : RoomDatabase() {

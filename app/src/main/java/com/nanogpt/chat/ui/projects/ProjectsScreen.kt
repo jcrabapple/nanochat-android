@@ -99,11 +99,11 @@ fun ProjectsScreen(
 
     if (showCreateDialog) {
         ProjectDialog(
-            onCreate = { name, color ->
-                viewModel.createProject(name, color)
+            onCreate = { name, description, systemPrompt, color ->
+                viewModel.createProject(name, description, systemPrompt, color)
                 showCreateDialog = false
             },
-            onUpdate = { _, _ -> },
+            onUpdate = { _, _, _, _ -> },
             onDismiss = { showCreateDialog = false }
         )
     }
@@ -111,9 +111,9 @@ fun ProjectsScreen(
     if (editingProject != null) {
         ProjectDialog(
             project = editingProject,
-            onCreate = { _, _ -> },
-            onUpdate = { name, color ->
-                viewModel.updateProject(editingProject!!.id, name, color)
+            onCreate = { _, _, _, _ -> },
+            onUpdate = { name, description, systemPrompt, color ->
+                viewModel.updateProject(editingProject!!.id, name, description, systemPrompt, color)
                 editingProject = null
             },
             onDismiss = { editingProject = null }

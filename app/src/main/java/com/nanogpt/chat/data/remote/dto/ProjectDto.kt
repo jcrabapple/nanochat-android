@@ -7,6 +7,8 @@ data class ProjectDto(
     val id: String,
     val name: String,
     val userId: String,
+    val description: String? = null,
+    val systemPrompt: String? = null,
     val color: String? = null,
     val createdAt: String,
     val updatedAt: String
@@ -15,11 +17,15 @@ data class ProjectDto(
 @Serializable
 data class CreateProjectRequest(
     val name: String,
+    val description: String? = null,
+    val systemPrompt: String? = null,
     val color: String? = null
 )
 
 @Serializable
 data class ProjectUpdates(
     val name: String? = null,
+    val description: String? = null,
+    val systemPrompt: String? = null,
     val color: String? = null
 )

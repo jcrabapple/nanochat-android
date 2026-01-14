@@ -9,6 +9,8 @@ data class ProjectEntity(
     val id: String,
     val name: String,
     val userId: String,
+    val description: String? = null,
+    val systemPrompt: String? = null,
     val color: String? = null,
     val createdAt: Long,
     val updatedAt: Long,

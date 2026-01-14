@@ -35,4 +35,7 @@ interface ProjectDao {
 
     @Query("DELETE FROM projects WHERE syncStatus = 'PENDING'")
     suspend fun deletePendingProjects()
+
+    @Query("SELECT * FROM projects WHERE syncStatus = 'PENDING'")
+    suspend fun getPendingProjects(): List<ProjectEntity>
 }
