@@ -207,6 +207,88 @@ class AssistantRepository @Inject constructor(
             Result.failure(e)
         }
     }
+
+    /**
+     * Sync all pending assistants to the server.
+     * Called on app startup and when user refreshes the assistant list.
+     *
+     * For new assistants (that were never synced), attempts to create them on the server.
+     * For updated assistants (that failed to sync updates), attempts to update them on the server.
+     */
+    suspend fun syncPendingAssistants(): Result<Int> {
+        return try {
+            val pendingAssistants = assistantDao.getPendingAssistants()
+            var syncedCount = 0
+
+            for (assistant in pendingAssistants) {
+                try {
+                    // Map entity fields to DTO field names
+                    val defaultWebSearchMode = if (assistant.webSearchEnabled) {
+                        assistant.webSearchMode ?: "standard"
+                    } else {
+                        "off"
+                    }
+
+                    // Try to update the assistant (works for both new and existing)
+                    // If it's a new assistant, the server will return 404, and we'll create it instead
+                    val updateResponse = api.updateAssistant(
+                        id = assistant.id,
+                        updates = com.nanogpt.chat.data.remote.dto.AssistantUpdates(
+                            name = assistant.name,
+                            systemPrompt = assistant.instructions,
+                            defaultModelId = assistant.modelId,
+                            defaultWebSearchMode = defaultWebSearchMode,
+                            defaultWebSearchProvider = assistant.webSearchProvider,
+                            temperature = assistant.temperature,
+                            topP = assistant.topP,
+                            reasoningEffort = assistant.reasoningEffort
+                        )
+                    )
+
+                    if (updateResponse.isSuccessful) {
+                        // Update successful, mark as synced
+                        assistantDao.updateAssistant(assistant.copy(syncStatus = SyncStatus.SYNCED))
+                        syncedCount++
+                    } else if (updateResponse.code() == 404) {
+                        // Assistant doesn't exist on server (new assistant), create it
+                        val createResponse = api.createAssistant(
+                            CreateAssistantRequest(
+                                name = assistant.name,
+                                description = null,
+                                systemPrompt = assistant.instructions,
+                                defaultModelId = assistant.modelId,
+                                defaultWebSearchMode = if (assistant.webSearchEnabled) assistant.webSearchMode else null,
+                                defaultWebSearchProvider = assistant.webSearchProvider,
+                                icon = assistant.icon,
+                                temperature = assistant.temperature,
+                                topP = assistant.topP,
+                                maxTokens = assistant.maxTokens,
+                                contextSize = assistant.contextSize,
+                                reasoningEffort = assistant.reasoningEffort
+                            )
+                        )
+
+                        if (createResponse.isSuccessful && createResponse.body() != null) {
+                            // Delete the local temporary assistant and insert with server data
+                            assistantDao.deleteAssistantById(assistant.id)
+                            val serverAssistant = createResponse.body()!!.toEntity().copy(
+                                description = assistant.description
+                            )
+                            assistantDao.insertAssistant(serverAssistant)
+                            syncedCount++
+                        }
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("AssistantRepository", "Failed to sync assistant ${assistant.id}", e)
+                    // Continue with next assistant
+                }
+            }
+
+            Result.success(syncedCount)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 }
 
 // Extension function to convert DTO to Entity

@@ -35,4 +35,7 @@ interface AssistantDao {
 
     @Query("DELETE FROM assistants WHERE syncStatus = 'PENDING'")
     suspend fun deletePendingAssistants()
+
+    @Query("SELECT * FROM assistants WHERE syncStatus = 'PENDING'")
+    suspend fun getPendingAssistants(): List<AssistantEntity>
 }

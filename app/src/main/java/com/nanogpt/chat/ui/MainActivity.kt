@@ -47,6 +47,7 @@ class MainActivity : ComponentActivity() {
         // Sync assistants from backend at launch
         lifecycleScope.launch {
             assistantRepository.refreshAssistants()
+            assistantRepository.syncPendingAssistants()
         }
 
         setContent {

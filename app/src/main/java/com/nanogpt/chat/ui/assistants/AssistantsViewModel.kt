@@ -27,6 +27,7 @@ class AssistantsViewModel @Inject constructor(
     init {
         observeAssistants()
         fetchUserModels()
+        syncPendingAssistants()
     }
 
     private fun observeAssistants() {
@@ -176,12 +177,30 @@ class AssistantsViewModel @Inject constructor(
             _uiState.value = _uiState.value.copy(isLoading = true)
             try {
                 assistantRepository.refreshAssistants()
+                syncPendingAssistants()
                 _uiState.value = _uiState.value.copy(isLoading = false)
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     error = e.message
                 )
+            }
+        }
+    }
+
+    private fun syncPendingAssistants() {
+        viewModelScope.launch {
+            try {
+                val result = assistantRepository.syncPendingAssistants()
+                result.onSuccess { count ->
+                    if (count > 0) {
+                        android.util.Log.d("AssistantsViewModel", "Synced $count pending assistants")
+                    }
+                }.onFailure { e ->
+                    android.util.Log.e("AssistantsViewModel", "Failed to sync pending assistants", e)
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("AssistantsViewModel", "Error syncing pending assistants", e)
             }
         }
     }
