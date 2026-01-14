@@ -176,7 +176,13 @@ fun ChatDrawer(
                             conversation = conversation,
                             isSelected = conversation.id == currentConversationId,
                             onClick = { onConversationClick(conversation.id) },
-                            onDelete = { viewModel.deleteConversation(conversation.id) }
+                            onDelete = {
+                                val isCurrentConversation = conversation.id == currentConversationId
+                                viewModel.deleteConversation(conversation.id)
+                                if (isCurrentConversation) {
+                                    onNewChat()
+                                }
+                            }
                         )
                     }
                 }
