@@ -45,6 +45,15 @@ interface ConversationDao {
     @Query("UPDATE conversations SET pinned = :pinned WHERE id = :id")
     suspend fun updatePinnedStatus(id: String, pinned: Boolean)
 
+    @Query("UPDATE conversations SET projectId = :projectId WHERE id = :id")
+    suspend fun updateProjectId(id: String, projectId: String?)
+
     @Query("DELETE FROM conversations")
     suspend fun deleteAllConversations()
+
+    @Query("SELECT COUNT(*) FROM conversations WHERE projectId = :projectId")
+    suspend fun getConversationCountForProject(projectId: String): Int
+
+    @Query("DELETE FROM conversations WHERE projectId = :projectId")
+    suspend fun deleteConversationsForProject(projectId: String)
 }

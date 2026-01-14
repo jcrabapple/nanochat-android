@@ -19,10 +19,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
@@ -34,6 +37,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -60,7 +64,9 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.nanogpt.chat.R
 import com.nanogpt.chat.data.local.entity.ConversationEntity
+import com.nanogpt.chat.data.local.entity.ProjectEntity
 import com.nanogpt.chat.ui.conversations.ConversationsListViewModel
+import com.nanogpt.chat.ui.conversations.MoveToProjectDialog
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -80,6 +86,9 @@ fun ChatDrawer(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
+    var selectedProjectFilter by remember { mutableStateOf<String?>(null) }
+    var showMoveToProjectDialog by remember { mutableStateOf(false) }
+    var conversationToMove by remember { mutableStateOf<ConversationEntity?>(null) }
 
     ModalDrawerSheet(
         modifier = modifier.width(300.dp)
@@ -130,7 +139,33 @@ fun ChatDrawer(
                 )
             )
 
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Project filter chips
+            if (uiState.projects.isNotEmpty()) {
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    item {
+                        FilterChip(
+                            selected = selectedProjectFilter == null,
+                            onClick = { selectedProjectFilter = null },
+                            label = { Text("All") },
+                            modifier = Modifier.height(32.dp)
+                        )
+                    }
+                    items(uiState.projects) { project ->
+                        FilterChip(
+                            selected = selectedProjectFilter == project.id,
+                            onClick = { selectedProjectFilter = project.id },
+                            label = { Text(project.name) },
+                            modifier = Modifier.height(32.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+            }
 
             // New chat button
             Button(
@@ -162,6 +197,12 @@ fun ChatDrawer(
                     uiState.conversations.filter {
                         it.title.contains(searchQuery, ignoreCase = true)
                     }
+                }.let { conversations ->
+                    if (selectedProjectFilter != null) {
+                        conversations.filter { it.projectId == selectedProjectFilter }
+                    } else {
+                        conversations
+                    }
                 }
 
                 LazyColumn(
@@ -182,6 +223,10 @@ fun ChatDrawer(
                                 if (isCurrentConversation) {
                                     onNewChat()
                                 }
+                            },
+                            onMoveToProject = {
+                                conversationToMove = conversation
+                                showMoveToProjectDialog = true
                             }
                         )
                     }
@@ -211,6 +256,23 @@ fun ChatDrawer(
             }
         }
     }
+
+    // Move to project dialog
+    if (showMoveToProjectDialog && conversationToMove != null) {
+        MoveToProjectDialog(
+            currentProjectId = conversationToMove!!.projectId,
+            projects = uiState.projects,
+            onProjectSelected = { projectId ->
+                viewModel.moveConversationToProject(conversationToMove!!.id, projectId)
+                showMoveToProjectDialog = false
+                conversationToMove = null
+            },
+            onDismiss = {
+                showMoveToProjectDialog = false
+                conversationToMove = null
+            }
+        )
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -220,6 +282,7 @@ fun DrawerConversationItem(
     isSelected: Boolean,
     onClick: () -> Unit,
     onDelete: () -> Unit,
+    onMoveToProject: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var showDropdownMenu by remember { mutableStateOf(false) }
@@ -292,6 +355,19 @@ fun DrawerConversationItem(
             onDismissRequest = { showDropdownMenu = false },
             modifier = Modifier.align(Alignment.CenterEnd)
         ) {
+            DropdownMenuItem(
+                text = { Text("Move to Project") },
+                onClick = {
+                    onMoveToProject()
+                    showDropdownMenu = false
+                },
+                leadingIcon = {
+                    Icon(
+                        Icons.Default.FolderOpen,
+                        contentDescription = null
+                    )
+                }
+            )
             DropdownMenuItem(
                 text = { Text("Delete") },
                 onClick = {

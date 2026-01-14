@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -21,6 +22,9 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -31,12 +35,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,6 +52,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.nanogpt.chat.data.local.entity.ProjectEntity
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -55,8 +62,11 @@ fun ProjectsScreen(
     onProjectSelected: (String) -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val coroutineScope = rememberCoroutineScope()
     var showCreateDialog by remember { mutableStateOf(false) }
     var editingProject by remember { mutableStateOf<ProjectEntity?>(null) }
+    var projectToDelete by remember { mutableStateOf<ProjectEntity?>(null) }
+    var conversationCount by remember { mutableStateOf(0) }
 
     Scaffold(
         topBar = {
@@ -91,7 +101,12 @@ fun ProjectsScreen(
                     project = project,
                     onClick = { onProjectSelected(project.id) },
                     onEdit = { editingProject = project },
-                    onDelete = { viewModel.deleteProject(project) }
+                    onDelete = {
+                        projectToDelete = project
+                        coroutineScope.launch {
+                            conversationCount = viewModel.getConversationCountForProject(project.id)
+                        }
+                    }
                 )
             }
         }
@@ -117,6 +132,19 @@ fun ProjectsScreen(
                 editingProject = null
             },
             onDismiss = { editingProject = null }
+        )
+    }
+
+    // Delete confirmation dialog
+    if (projectToDelete != null) {
+        DeleteProjectDialog(
+            projectName = projectToDelete!!.name,
+            conversationCount = conversationCount,
+            onConfirm = { deleteConversations ->
+                viewModel.deleteProjectWithConversations(projectToDelete!!, deleteConversations)
+                projectToDelete = null
+            },
+            onDismiss = { projectToDelete = null }
         )
     }
 }
@@ -188,4 +216,67 @@ fun ProjectItem(
             }
         }
     }
+}
+
+@Composable
+fun DeleteProjectDialog(
+    projectName: String,
+    conversationCount: Int,
+    onConfirm: (Boolean) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var deleteConversations by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text("Delete Project?")
+        },
+        text = {
+            Column {
+                Text(
+                    "Are you sure you want to delete \"$projectName\"?",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                if (conversationCount > 0) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        "This project has $conversationCount conversation(s).",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        androidx.compose.material3.Checkbox(
+                            checked = deleteConversations,
+                            onCheckedChange = { deleteConversations = it }
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            "Also delete conversations in this project",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onConfirm(deleteConversations) },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error
+                )
+            ) {
+                Text("Delete")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }

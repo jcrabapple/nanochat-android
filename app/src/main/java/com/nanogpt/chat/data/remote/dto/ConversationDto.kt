@@ -32,3 +32,10 @@ data class ConversationUpdates(
     val projectId: String? = null,
     val pinned: Boolean? = null
 )
+
+@Serializable
+data class UpdateConversationProjectRequest(
+    val action: String = "setProject",
+    val conversationId: String,
+    val projectId: String? = null
+)

@@ -33,6 +33,7 @@ class ProjectRepository @Inject constructor(
         systemPrompt: String? = null,
         color: String? = null
     ): Result<ProjectEntity> {
+        android.util.Log.d("ProjectRepository", "Creating project: name=$name, description=$description, systemPrompt=$systemPrompt, color=$color")
         return try {
             // Create locally first
             val localProject = ProjectEntity(
@@ -47,10 +48,12 @@ class ProjectRepository @Inject constructor(
                 syncStatus = SyncStatus.PENDING
             )
 
+            android.util.Log.d("ProjectRepository", "Inserting local project with id: ${localProject.id}")
             projectDao.insertProject(localProject)
 
             // Try to sync with server
             try {
+                android.util.Log.d("ProjectRepository", "Calling API to create project on server")
                 val response = api.createProject(
                     CreateProjectRequest(
                         name = name,
@@ -59,20 +62,26 @@ class ProjectRepository @Inject constructor(
                         color = color
                     )
                 )
+                android.util.Log.d("ProjectRepository", "API response: successful=${response.isSuccessful}, code=${response.code()}")
                 if (response.isSuccessful && response.body() != null) {
                     val dto = response.body()!!
+                    android.util.Log.d("ProjectRepository", "Server returned project with id: ${dto.id}")
                     // Delete local temp and insert server version
                     projectDao.deleteProjectById(localProject.id)
                     val serverProject = dto.toEntity()
                     projectDao.insertProject(serverProject)
+                    android.util.Log.d("ProjectRepository", "Project created successfully from server")
                     Result.success(serverProject)
                 } else {
+                    android.util.Log.e("ProjectRepository", "API call failed: code=${response.code()}, message=${response.message()}")
                     Result.success(localProject)
                 }
             } catch (e: Exception) {
+                android.util.Log.e("ProjectRepository", "Exception during API call", e)
                 Result.success(localProject)
             }
         } catch (e: Exception) {
+            android.util.Log.e("ProjectRepository", "Exception during project creation", e)
             Result.failure(e)
         }
     }

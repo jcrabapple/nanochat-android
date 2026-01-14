@@ -4,7 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nanogpt.chat.data.local.SecureStorage
 import com.nanogpt.chat.data.local.dao.ConversationDao
+import com.nanogpt.chat.data.local.dao.ProjectDao
 import com.nanogpt.chat.data.local.entity.ConversationEntity
+import com.nanogpt.chat.data.local.entity.ProjectEntity
 import com.nanogpt.chat.data.local.entity.SyncStatus
 import com.nanogpt.chat.data.repository.ConversationRepository
 import com.nanogpt.chat.data.sync.ConversationSyncManager
@@ -13,12 +15,14 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
 class ConversationsListViewModel @Inject constructor(
     private val conversationDao: ConversationDao,
+    private val projectDao: ProjectDao,
     private val secureStorage: SecureStorage,
     private val conversationRepository: ConversationRepository,
     private val conversationSyncManager: ConversationSyncManager
@@ -30,6 +34,7 @@ class ConversationsListViewModel @Inject constructor(
     init {
         // Always observe local database for conversation updates
         observeConversations()
+        observeProjects()
         // Also fetch fresh conversations from API
         loadConversationsFromApi()
         // Listen for sync events from ChatViewModel and background worker
@@ -43,6 +48,14 @@ class ConversationsListViewModel @Inject constructor(
                     conversations = conversations,
                     isLoading = false
                 )
+            }
+        }
+    }
+
+    private fun observeProjects() {
+        viewModelScope.launch {
+            projectDao.getAllProjects().collect { projects ->
+                _uiState.value = _uiState.value.copy(projects = projects)
             }
         }
     }
@@ -111,10 +124,27 @@ class ConversationsListViewModel @Inject constructor(
             }
         }
     }
+
+    fun moveConversationToProject(conversationId: String, projectId: String?) {
+        viewModelScope.launch {
+            // Update local database immediately for visual feedback
+            conversationDao.updateProjectId(conversationId, projectId)
+
+            // Also sync to backend API
+            val result = conversationRepository.updateConversationProject(conversationId, projectId)
+            if (result.isFailure) {
+                // Show error to user since the change will come back on restart
+                _uiState.value = _uiState.value.copy(
+                    error = "Warning: Could not update project on server. Change will revert on restart."
+                )
+            }
+        }
+    }
 }
 
 data class ConversationsListUiState(
     val conversations: List<ConversationEntity> = emptyList(),
+    val projects: List<ProjectEntity> = emptyList(),
     val isLoading: Boolean = true,
     val error: String? = null
 )

@@ -27,6 +27,11 @@ interface NanoChatApi {
         @Query("all") all: String? = null
     ): Response<Unit>
 
+    @POST("/api/db/conversations")
+    suspend fun updateConversation(
+        @Body request: UpdateConversationProjectRequest
+    ): Response<ConversationDto>
+
     // ============== Messages ==============
     @GET("/api/db/messages")
     suspend fun getMessages(

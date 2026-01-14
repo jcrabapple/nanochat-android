@@ -135,6 +135,27 @@ class ConversationRepository @Inject constructor(
         }
     }
 
+    suspend fun updateConversationProject(conversationId: String, projectId: String?): Result<Unit> {
+        return try {
+            val response = api.updateConversation(
+                com.nanogpt.chat.data.remote.dto.UpdateConversationProjectRequest(
+                    action = "setProject",
+                    conversationId = conversationId,
+                    projectId = projectId
+                )
+            )
+            if (response.isSuccessful && response.body() != null) {
+                val updated = response.body()!!.toEntity()
+                conversationDao.updateConversation(updated)
+                Result.success(Unit)
+            } else {
+                Result.failure(Exception("Failed to update conversation project: ${response.code()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun deleteConversation(id: String): Result<Unit> {
         return try {
             // First, unstar all messages in this conversation to clean up starred messages
@@ -143,6 +164,8 @@ class ConversationRepository @Inject constructor(
             // Delete from API
             val response = api.deleteConversation(id)
             if (response.isSuccessful) {
+                // Delete from local database after successful API deletion
+                conversationDao.deleteConversationById(id)
                 Result.success(Unit)
             } else {
                 Result.failure(Exception("Failed to delete conversation: ${response.code()}"))
@@ -198,6 +221,29 @@ class ConversationRepository @Inject constructor(
 
     suspend fun insertConversation(conversation: ConversationEntity) {
         conversationDao.insertConversation(conversation)
+    }
+
+    suspend fun getConversationCountForProject(projectId: String): Int {
+        return conversationDao.getConversationCountForProject(projectId)
+    }
+
+    suspend fun deleteConversationsForProject(projectId: String): Result<Int> {
+        return try {
+            val conversations = conversationDao.getConversationsByProject(projectId)
+            val conversationList = conversations.first() // Collect the Flow
+
+            var deletedCount = 0
+            conversationList.forEach { conversation ->
+                val result = deleteConversation(conversation.id)
+                if (result.isSuccess) {
+                    deletedCount++
+                }
+            }
+
+            Result.success(deletedCount)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
 }
 

@@ -15,7 +15,8 @@ import javax.inject.Inject
 @HiltViewModel
 class ProjectsViewModel @Inject constructor(
     private val projectRepository: ProjectRepository,
-    private val secureStorage: SecureStorage
+    private val secureStorage: SecureStorage,
+    private val conversationRepository: com.nanogpt.chat.data.repository.ConversationRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ProjectsUiState())
@@ -43,10 +44,9 @@ class ProjectsViewModel @Inject constructor(
         systemPrompt: String? = null,
         color: String?
     ) {
+        android.util.Log.d("ProjectsViewModel", "createProject called: name=$name, description=$description, systemPrompt=$systemPrompt, color=$color")
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
-
-            val userId = secureStorage.getUserId() ?: return@launch
 
             val result = projectRepository.createProject(
                 name = name,
@@ -56,8 +56,10 @@ class ProjectsViewModel @Inject constructor(
             )
 
             result.onSuccess {
+                android.util.Log.d("ProjectsViewModel", "Project created successfully: ${it.id}")
                 _uiState.value = _uiState.value.copy(isLoading = false)
             }.onFailure { e ->
+                android.util.Log.e("ProjectsViewModel", "Failed to create project", e)
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     error = e.message
@@ -106,6 +108,42 @@ class ProjectsViewModel @Inject constructor(
 
     fun clearError() {
         _uiState.value = _uiState.value.copy(error = null)
+    }
+
+    suspend fun getConversationCountForProject(projectId: String): Int {
+        return conversationRepository.getConversationCountForProject(projectId)
+    }
+
+    fun deleteProjectWithConversations(project: ProjectEntity, deleteConversations: Boolean) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true)
+
+            try {
+                if (deleteConversations) {
+                    // Delete all conversations in the project
+                    val result = conversationRepository.deleteConversationsForProject(project.id)
+                    result.onFailure { e ->
+                        android.util.Log.e("ProjectsViewModel", "Failed to delete conversations", e)
+                        _uiState.value = _uiState.value.copy(
+                            error = "Failed to delete some conversations: ${e.message}"
+                        )
+                    }
+                }
+
+                // Delete the project
+                projectRepository.deleteProject(project.id)
+                    .onFailure { e ->
+                        _uiState.value = _uiState.value.copy(error = e.message)
+                    }
+
+                _uiState.value = _uiState.value.copy(isLoading = false)
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = e.message
+                )
+            }
+        }
     }
 
     fun refresh() {
