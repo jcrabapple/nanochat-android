@@ -11,10 +11,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.SmartToy
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -38,11 +44,19 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.SubcomposeAsyncImage
 
+data class ModelCapabilities(
+    val vision: Boolean = false,
+    val reasoning: Boolean = false,
+    val images: Boolean = false,
+    val video: Boolean = false
+)
+
 data class ModelInfo(
     val id: String,
     val name: String,
     val provider: String? = null,
-    val providerLogo: String? = null
+    val providerLogo: String? = null,
+    val capabilities: ModelCapabilities = ModelCapabilities()
 )
 
 @Composable
@@ -100,6 +114,20 @@ fun ModelSelector(
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
+                                        }
+                                        // Capability badges
+                                        if (model.capabilities.vision || model.capabilities.reasoning ||
+                                            model.capabilities.images || model.capabilities.video) {
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Row(
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                ModelCapabilityBadge("Vision", Icons.Default.Visibility, model.capabilities.vision)
+                                                ModelCapabilityBadge("Reason", Icons.Default.Psychology, model.capabilities.reasoning)
+                                                ModelCapabilityBadge("Image", Icons.Default.Image, model.capabilities.images)
+                                                ModelCapabilityBadge("Video", Icons.Default.Videocam, model.capabilities.video)
+                                            }
                                         }
                                     }
                                 }
@@ -167,6 +195,19 @@ fun ModelSelector(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
+                                // Capability badges
+                                if (model.capabilities.vision || model.capabilities.reasoning ||
+                                    model.capabilities.images || model.capabilities.video) {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        ModelCapabilityBadge("Vision", Icons.Default.Visibility, model.capabilities.vision)
+                                        ModelCapabilityBadge("Reason", Icons.Default.Psychology, model.capabilities.reasoning)
+                                        ModelCapabilityBadge("Image", Icons.Default.Image, model.capabilities.images)
+                                        ModelCapabilityBadge("Video", Icons.Default.Videocam, model.capabilities.video)
+                                    }
+                                }
                             }
                         },
                         onClick = {
@@ -216,6 +257,41 @@ private fun ProviderBadge(provider: String?) {
                     color = Color.White
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun ModelCapabilityBadge(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    enabled: Boolean
+) {
+    if (!enabled) return
+
+    Surface(
+        shape = RoundedCornerShape(4.dp),
+        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f),
+        modifier = Modifier.height(20.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                modifier = Modifier.size(10.dp),
+                tint = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontSize = 9.sp
+                ),
+                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
+            )
         }
     }
 }

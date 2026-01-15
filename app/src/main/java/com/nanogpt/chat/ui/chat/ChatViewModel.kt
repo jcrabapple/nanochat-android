@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.nanogpt.chat.data.remote.StreamingManager
 import com.nanogpt.chat.data.remote.api.NanoChatApi
 import com.nanogpt.chat.data.remote.dto.GenerateMessageRequest
+import com.nanogpt.chat.data.remote.dto.ModelDto
 import com.nanogpt.chat.data.remote.dto.UserModelDto
 import com.nanogpt.chat.data.remote.dto.parseUserModelsResponse
 import com.nanogpt.chat.data.remote.dto.toDomain
@@ -21,6 +22,7 @@ import com.nanogpt.chat.data.local.dao.MessageDao
 import com.nanogpt.chat.data.local.entity.ConversationEntity
 import com.nanogpt.chat.data.local.entity.AssistantEntity
 import com.nanogpt.chat.ui.chat.components.ModelInfo
+import com.nanogpt.chat.ui.chat.components.ModelCapabilities
 import com.nanogpt.chat.data.local.entity.MessageEntity
 import com.nanogpt.chat.ui.chat.components.WebSearchMode
 import com.nanogpt.chat.ui.chat.components.WebSearchProvider
@@ -75,6 +77,9 @@ class ChatViewModel @Inject constructor(
 
     private val _inputText = MutableStateFlow("")
     val inputText: StateFlow<String> = _inputText.asStateFlow()
+
+    // Cache for model capabilities (modelId -> ModelDto with full info including capabilities)
+    private val modelCapabilitiesCache = MutableStateFlow<Map<String, ModelDto>>(emptyMap())
 
     private var currentAssistantMessage: StringBuilder = StringBuilder()
     private var currentReasoning: StringBuilder = StringBuilder()
@@ -696,35 +701,32 @@ class ChatViewModel @Inject constructor(
     private fun fetchUserModels() {
         viewModelScope.launch {
             try {
+                // Fetch user models (enabled models for this user)
                 val response = api.getUserModels()
                 if (response.isSuccessful) {
                     val body = response.body()?.string() ?: "{}"
                     val jsonElement = Json.parseToJsonElement(body)
                     val userModels = parseUserModelsResponse(jsonElement)
-                    val models = userModels
+
+                    // First pass: create models without capabilities (will be updated when capabilities arrive)
+                    val initialModels = userModels
                         .filter { it.enabled }
                         .sortedByDescending { it.pinned }
                         .map { userModel ->
-                            val actualProvider = extractProviderFromModelId(userModel.modelId)
-                            ModelInfo(
-                                id = userModel.modelId,
-                                name = userModel.modelId,
-                                provider = actualProvider,
-                                providerLogo = userModel.icon_url  // Use icon_url from API
-                            )
+                            createModelInfo(userModel.modelId, userModel.icon_url)
                         }
 
                     // Try to use the last used model
                     val lastModelId = secureStorage.getLastModelId()
                     val selectedModel = if (lastModelId != null) {
-                        models.find { it.id == lastModelId } ?: models.firstOrNull()
+                        initialModels.find { it.id == lastModelId } ?: initialModels.firstOrNull()
                     } else {
-                        models.firstOrNull()
+                        initialModels.firstOrNull()
                     }
 
                     _uiState.value = _uiState.value.copy(
-                        availableModels = models,
-                        selectedModel = selectedModel ?: ModelInfo("zai-org/glm-4.7", "GLM-4.7", "zai-org", getProviderLogoUrl("zai-org"))
+                        availableModels = initialModels,
+                        selectedModel = selectedModel ?: ModelInfo("zai-org/glm-4.7", "GLM 4.7", "zai-org", getProviderLogoUrl("zai-org"))
                     )
 
                     // If an assistant is already selected, re-apply its model settings now that models are available
@@ -741,6 +743,70 @@ class ChatViewModel @Inject constructor(
                 applyDefaultModels()
             }
         }
+
+        // Also fetch full models with capabilities in parallel (non-blocking)
+        viewModelScope.launch {
+            try {
+                val response = api.getModels()
+                if (response.isSuccessful && response.body() != null) {
+                    val allModels = response.body()!!
+                    // Build a map of modelId -> ModelDto for quick lookup
+                    val capabilitiesMap = allModels.associateBy { it.id }
+                    modelCapabilitiesCache.value = capabilitiesMap
+                    android.util.Log.d("ChatViewModel", "Fetched ${capabilitiesMap.size} models with capabilities")
+
+                    // Re-fetch user models to update them with capabilities
+                    val userResponse = api.getUserModels()
+                    if (userResponse.isSuccessful) {
+                        val body = userResponse.body()?.string() ?: "{}"
+                        val jsonElement = Json.parseToJsonElement(body)
+                        val userModels = parseUserModelsResponse(jsonElement)
+                        val updatedModels = userModels
+                            .filter { it.enabled }
+                            .sortedByDescending { it.pinned }
+                            .map { userModel ->
+                                createModelInfo(userModel.modelId, userModel.icon_url)
+                            }
+
+                        // Update UI with models that now have capabilities
+                        _uiState.value = _uiState.value.copy(
+                            availableModels = updatedModels
+                        )
+                        android.util.Log.d("ChatViewModel", "Updated models with capabilities")
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("ChatViewModel", "Failed to fetch model capabilities: ${e.message}")
+                // Don't fail - the fallback pattern matching will still work
+            }
+        }
+    }
+
+    /**
+     * Create a ModelInfo object from a model ID and icon URL.
+     * Uses capabilities from cache if available.
+     */
+    private fun createModelInfo(modelId: String, iconUrl: String?): ModelInfo {
+        val actualProvider = extractProviderFromModelId(modelId)
+        val cachedModel = modelCapabilitiesCache.value[modelId]
+        val capabilities = if (cachedModel != null) {
+            ModelCapabilities(
+                vision = cachedModel.capabilities.vision,
+                reasoning = cachedModel.capabilities.reasoning,
+                images = cachedModel.capabilities.images,
+                video = cachedModel.capabilities.video
+            )
+        } else {
+            ModelCapabilities()
+        }
+
+        return ModelInfo(
+            id = modelId,
+            name = extractFriendlyName(modelId),
+            provider = actualProvider,
+            providerLogo = iconUrl,
+            capabilities = capabilities
+        )
     }
 
     private fun fetchAssistants() {
@@ -877,6 +943,78 @@ class ChatViewModel @Inject constructor(
                 null
             }
         }
+    }
+
+    /**
+     * Extract a friendly name from a model ID.
+     * Examples:
+     * - "zai-org/glm-4.7" -> "GLM 4.7"
+     * - "openai/gpt-4o" -> "GPT-4o"
+     * - "anthropic/claude-3-5-sonnet-20241022" -> "Claude 3.5 Sonnet"
+     */
+    private fun extractFriendlyName(modelId: String): String {
+        // Get the part after the provider slash
+        val modelName = modelId.substringAfterLast("/")
+
+        // Clean up and format the name
+        return modelName
+            // Replace version separators with spaces for better readability
+            .replace("-", " ")
+            .replace("_", " ")
+            // Capitalize first letter of each word
+            .split(" ")
+            .joinToString(" ") { word ->
+                if (word.isNotEmpty()) {
+                    word[0].uppercase() + word.substring(1)
+                } else {
+                    word
+                }
+            }
+            // Clean up multiple spaces
+            .replace(Regex("\\s+"), " ")
+            .trim()
+    }
+
+    /**
+     * Check if a model is an image generation model based on its capabilities.
+     * Returns true if the model has image generation capability, false otherwise.
+     */
+    fun isImageGenerationModel(modelId: String?): Boolean {
+        if (modelId == null) return false
+
+        // Check cache first
+        val cachedModel = modelCapabilitiesCache.value[modelId]
+        if (cachedModel != null) {
+            return cachedModel.capabilities.images
+        }
+
+        // Fallback to model ID pattern matching if not in cache
+        val lowerId = modelId.lowercase()
+        return lowerId.contains("flux") ||
+                lowerId.contains("stable-diffusion") ||
+                lowerId.contains("stablediffusion") ||
+                lowerId.contains("dall-e") ||
+                lowerId.contains("dalle") ||
+                lowerId.contains("midjourney") ||
+                lowerId.contains("imagen") ||
+                lowerId.contains("kandinsky") ||
+                lowerId.contains("sdxl") ||
+                lowerId.contains("sd-xl") ||
+                lowerId.contains("sd-") ||
+                lowerId.contains("sd1.") ||
+                lowerId.contains("sd2.") ||
+                lowerId.contains("sd3") ||
+                lowerId.contains("hidream") ||
+                lowerId.contains("playground") ||
+                lowerId.contains("stability-ai") ||
+                lowerId.contains("black-forest-labs") ||
+                lowerId.contains("ideogram") ||
+                lowerId.contains("leonardo") ||
+                lowerId.contains("replicate") ||
+                lowerId.contains("image-gen") ||
+                lowerId.contains("imagegen") ||
+                lowerId.contains("txt2img") ||
+                lowerId.contains("text-to-image")
     }
 
     override fun onCleared() {

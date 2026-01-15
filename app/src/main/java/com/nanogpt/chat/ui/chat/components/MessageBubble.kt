@@ -31,6 +31,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -64,6 +65,7 @@ fun MessageBubble(
     onImageDownload: (String) -> Unit = {},
     backendUrl: String? = null,
     isGenerating: Boolean = false,
+    isImageGenerationModel: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val isUser = message.role == "user"
@@ -170,10 +172,10 @@ fun MessageBubble(
 
             // Show loading placeholder when generating an image
             if (isGenerating && !isUser && message.images.isNullOrEmpty()) {
-                val isImageGeneration = message.content.equals("Generated Image", ignoreCase = true) ||
+                // Check if this is an image generation model based on capabilities
+                val isImageGeneration = isImageGenerationModel ||
+                        message.content.equals("Generated Image", ignoreCase = true) ||
                         message.content.equals("Generating image...", ignoreCase = true) ||
-                        message.content.isEmpty() ||
-                        message.content.length < 20 ||
                         message.annotations?.any { it.type == "image" } == true
 
                 if (isImageGeneration) {
@@ -202,6 +204,15 @@ fun MessageBubble(
                             )
                         }
                     }
+                } else {
+                    // Subtle indicator for text generation
+                    Spacer(modifier = Modifier.size(4.dp))
+                    LinearProgressIndicator(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(2.dp),
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+                    )
                 }
             }
 

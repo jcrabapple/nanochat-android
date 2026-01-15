@@ -334,6 +334,7 @@ fun ChatScreen(
                             message = message,
                             backendUrl = viewModel.backendUrl,
                             isGenerating = uiState.isGenerating && isLastAssistantMessage,
+                            isImageGenerationModel = viewModel.isImageGenerationModel(message.modelId),
                             onImageClick = { imageUrl -> fullScreenImageUrl = imageUrl },
                             onImageDownload = { imageUrl -> downloadImage(context, imageUrl) },
                             onCopy = {
