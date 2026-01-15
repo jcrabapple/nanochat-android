@@ -1,5 +1,6 @@
 package com.nanogpt.chat.ui.chat.components
 
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -40,12 +41,10 @@ fun ChatInputBar(
     onSend: () -> Unit,
     onStop: () -> Unit,
     isGenerating: Boolean = false,
-    webSearchEnabled: Boolean = false,
-    onWebSearchClick: () -> Unit = {},
-    selectedModel: ModelInfo? = null,
-    onModelClick: () -> Unit = {},
     onAttachmentClick: (() -> Unit)? = null,
-    onVoiceClick: (() -> Unit)? = null,
+    fileAttachments: List<FileAttachment> = emptyList(),
+    onRemoveAttachment: (FileAttachment) -> Unit = {},
+    showAttachments: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -54,50 +53,29 @@ fun ChatInputBar(
         tonalElevation = 2.dp,
         modifier = modifier.fillMaxWidth()
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Model selector button
-            IconButton(onClick = onModelClick) {
-                Icon(
-                    Icons.Filled.SmartToy,
-                    contentDescription = "Select model",
-                    tint = MaterialTheme.colorScheme.primary
+        Column {
+            // File attachments row (only show if enabled and has attachments)
+            if (showAttachments && fileAttachments.isNotEmpty()) {
+                FileAttachmentRow(
+                    attachments = fileAttachments,
+                    onRemoveAttachment = onRemoveAttachment
                 )
             }
 
-            // Web search toggle
-            if (webSearchEnabled) {
-                Surface(
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    shape = CircleShape,
-                    modifier = Modifier.size(48.dp)
-                ) {
-                    IconButton(
-                        onClick = onWebSearchClick,
-                        modifier = Modifier.size(48.dp)
-                    ) {
-                        Icon(
-                            Icons.Filled.Search,
-                            contentDescription = "Web search settings",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                }
-            } else {
-                IconButton(
-                    onClick = onWebSearchClick,
-                    modifier = Modifier.size(48.dp)
-                ) {
+            // Input row
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+            // Attachment button (only show if enabled and not generating)
+            if (onAttachmentClick != null && showAttachments && !isGenerating) {
+                IconButton(onClick = onAttachmentClick) {
                     Icon(
-                        Icons.Outlined.Search,
-                        contentDescription = "Web search settings",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(24.dp)
+                        Icons.Filled.Attachment,
+                        contentDescription = "Attach file",
+                        tint = MaterialTheme.colorScheme.primary
                     )
                 }
             }
@@ -147,6 +125,7 @@ fun ChatInputBar(
                     )
                 }
             }
+        }
         }
     }
 }

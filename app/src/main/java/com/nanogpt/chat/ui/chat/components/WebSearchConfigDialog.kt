@@ -1,19 +1,25 @@
 package com.nanogpt.chat.ui.chat.components
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 
@@ -28,6 +34,15 @@ enum class WebSearchProvider(val displayName: String, val value: String) {
     TAVILY("Tavily", "tavily"),
     EXA("Exa", "exa"),
     KAGI("Kagi", "kagi")
+}
+
+// Helper function to get color for each mode
+private fun WebSearchMode.getColor(materialTheme: androidx.compose.material3.ColorScheme): androidx.compose.ui.graphics.Color {
+    return when (this) {
+        WebSearchMode.OFF -> androidx.compose.ui.graphics.Color.Transparent
+        WebSearchMode.STANDARD -> materialTheme.primary
+        WebSearchMode.DEEP -> materialTheme.tertiary
+    }
 }
 
 @Composable
@@ -64,16 +79,26 @@ fun WebSearchConfigDialog(
                                 role = Role.RadioButton
                             )
                             .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         RadioButton(
                             selected = currentMode == mode,
                             onClick = null
                         )
+
+                        // Colored indicator dot
+                        if (mode != WebSearchMode.OFF) {
+                            Surface(
+                                modifier = Modifier.size(12.dp),
+                                shape = CircleShape,
+                                color = mode.getColor(MaterialTheme.colorScheme)
+                            ) {}
+                        }
+
                         Text(
                             text = mode.displayName,
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.padding(start = 8.dp)
+                            style = MaterialTheme.typography.bodyMedium
                         )
                     }
                 }

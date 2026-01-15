@@ -23,6 +23,8 @@ import com.nanogpt.chat.data.local.entity.ConversationEntity
 import com.nanogpt.chat.data.local.entity.AssistantEntity
 import com.nanogpt.chat.ui.chat.components.ModelInfo
 import com.nanogpt.chat.ui.chat.components.ModelCapabilities
+import com.nanogpt.chat.ui.chat.components.FileAttachment
+import com.nanogpt.chat.ui.chat.components.FileType
 import com.nanogpt.chat.data.local.entity.MessageEntity
 import com.nanogpt.chat.ui.chat.components.WebSearchMode
 import com.nanogpt.chat.ui.chat.components.WebSearchProvider
@@ -170,6 +172,244 @@ class ChatViewModel @Inject constructor(
         _inputText.value = text
     }
 
+    // ============== File Attachment Management ==============
+
+    /**
+     * Add a file attachment and validate it
+     */
+    fun addFileAttachment(uri: android.net.Uri, fileName: String, mimeType: String, sizeBytes: Long) {
+        viewModelScope.launch {
+            try {
+                // Validate file type
+                if (!FileAttachment.isValidMimeType(mimeType)) {
+                    _uiState.value = _uiState.value.copy(
+                        error = "Unsupported file type: $mimeType. Supported types: TXT, CSV, PDF, Markdown, JSON"
+                    )
+                    return@launch
+                }
+
+                // Validate file size
+                if (!FileAttachment.isValidFileSize(sizeBytes)) {
+                    val sizeMB = sizeBytes / (1024.0 * 1024.0)
+                    _uiState.value = _uiState.value.copy(
+                        error = "File too large: ${String.format("%.2f", sizeMB)}MB. Maximum size is 10MB."
+                    )
+                    return@launch
+                }
+
+                val fileType = FileAttachment.getFileType(mimeType, fileName)
+
+                // For text-based files, read content and estimate tokens
+                val estimatedTokens = if (fileType?.supportsText == true) {
+                    try {
+                        val content = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            readTextContent(uri)
+                        }
+                        FileAttachment.estimateTokens(content)
+                    } catch (e: Exception) {
+                        android.util.Log.e("ChatViewModel", "Failed to read file content: ${e.message}")
+                        null
+                    }
+                } else {
+                    null
+                }
+
+                // Check token count against model context window
+                if (estimatedTokens != null) {
+                    val maxTokens = getModelContextWindow()
+                    if (estimatedTokens > maxTokens) {
+                        _uiState.value = _uiState.value.copy(
+                            error = "File is too large (~$estimatedTokens tokens). Model supports maximum $maxTokens tokens."
+                        )
+                        return@launch
+                    }
+                }
+
+                val attachment = FileAttachment(
+                    uri = uri,
+                    fileName = fileName,
+                    mimeType = mimeType,
+                    sizeBytes = sizeBytes,
+                    estimatedTokens = estimatedTokens,
+                    fileType = fileType
+                )
+
+                val currentAttachments = _uiState.value.fileAttachments.toMutableList()
+                currentAttachments.add(attachment)
+                _uiState.value = _uiState.value.copy(fileAttachments = currentAttachments)
+
+                // Clear error after adding file
+                _uiState.value = _uiState.value.copy(error = null)
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    error = "Failed to add file: ${e.message}"
+                )
+            }
+        }
+    }
+
+    /**
+     * Remove a file attachment
+     */
+    fun removeFileAttachment(uri: android.net.Uri) {
+        val currentAttachments = _uiState.value.fileAttachments.toMutableList()
+        currentAttachments.removeAll { it.uri == uri }
+        _uiState.value = _uiState.value.copy(fileAttachments = currentAttachments)
+    }
+
+    /**
+     * Upload all pending file attachments
+     */
+    @Suppress("DEPRECATION")
+    private suspend fun uploadFileAttachments(): List<com.nanogpt.chat.data.remote.dto.MessageDocumentDto> {
+        val uploadedDocuments = mutableListOf<com.nanogpt.chat.data.remote.dto.MessageDocumentDto>()
+
+        _uiState.value.fileAttachments.forEach { attachment ->
+            if (!attachment.isUploaded && !attachment.hasError) {
+                try {
+                    // Create binary request body
+                    val contentResolver = getApplicationContext().contentResolver
+                    val inputStream = contentResolver.openInputStream(attachment.uri)
+                    val fileBytes = inputStream?.readBytes() ?: throw Exception("Failed to read file")
+
+                    // Create RequestBody with the file bytes (null MediaType is okay since we set it via header)
+                    val mediaType = attachment.mimeType.toMediaType()
+                    val requestBody = okhttp3.RequestBody.create(
+                        mediaType,
+                        fileBytes
+                    )
+
+                    // Upload file to /api/storage endpoint
+                    android.util.Log.d("ChatViewModel", "Uploading file: ${attachment.fileName}, MIME: ${attachment.mimeType}")
+
+                    // Normalize MIME type for TXT files
+                    // Some backends reject "text/plain", so we try:
+                    // 1. "text/plain; charset=utf-8" first
+                    // 2. Fall back to "text/markdown" if that fails
+                    val normalizedMimeType = when {
+                        attachment.mimeType == "text/plain" && attachment.fileType == FileType.TEXT -> "text/markdown"
+                        else -> attachment.mimeType
+                    }
+
+                    android.util.Log.d("ChatViewModel", "Using MIME type: $normalizedMimeType (original: ${attachment.mimeType})")
+
+                    val response = api.uploadFile(
+                        file = requestBody,
+                        contentType = normalizedMimeType,
+                        fileName = attachment.fileName
+                    )
+
+                    android.util.Log.d("ChatViewModel", "Upload response: HTTP ${response.code()}, success: ${response.isSuccessful}")
+                    if (!response.isSuccessful) {
+                        val errorBody = response.errorBody()?.string()
+                        android.util.Log.e("ChatViewModel", "Upload failed. Response: $errorBody")
+                    }
+
+                    if (response.isSuccessful && response.body() != null) {
+                        val uploadResponse = response.body()!!
+
+                        // Determine file type for MessageDocumentDto
+                        val fileTypeStr = when (attachment.fileType) {
+                            FileType.PDF -> "pdf"
+                            FileType.MARKDOWN -> "markdown"
+                            FileType.TEXT -> "text"
+                            FileType.CSV -> "text"
+                            FileType.JSON -> "text"
+                            FileType.EPUB -> "epub"
+                            null -> "text"
+                            else -> "text"  // Fallback for any other types
+                        }
+
+                        uploadedDocuments.add(
+                            com.nanogpt.chat.data.remote.dto.MessageDocumentDto(
+                                url = uploadResponse.url,
+                                storage_id = uploadResponse.storageId,
+                                fileName = attachment.fileName,
+                                fileType = fileTypeStr
+                            )
+                        )
+                    } else {
+                        throw Exception("Upload failed: HTTP ${response.code()}")
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("ChatViewModel", "Failed to upload file: ${e.message}")
+                    throw e
+                }
+            } else if (attachment.isUploaded) {
+                // Already uploaded, add to list
+                uploadedDocuments.add(
+                    com.nanogpt.chat.data.remote.dto.MessageDocumentDto(
+                        url = attachment.uploadedUrl!!,
+                        storage_id = attachment.storageId!!,
+                        fileName = attachment.fileName,
+                        fileType = attachment.fileType?.name?.lowercase()
+                    )
+                )
+            }
+        }
+
+        return uploadedDocuments
+    }
+
+    /**
+     * Convert MIME type string to MediaType using OkHttp's extension function
+     */
+    private fun String.toMediaType(): okhttp3.MediaType? {
+        // Use reflection to call the extension function
+        // This avoids the deprecation error while maintaining compatibility
+        val clazz = okhttp3.MediaType::class.java
+        val method = clazz.getDeclaredMethod("get", String::class.java)
+        return method.invoke(null, this) as? okhttp3.MediaType
+    }
+
+    /**
+     * Clear all file attachments after sending
+     */
+    private fun clearFileAttachments() {
+        _uiState.value = _uiState.value.copy(fileAttachments = emptyList())
+    }
+
+    /**
+     * Read text content from URI
+     */
+    private suspend fun readTextContent(uri: android.net.Uri): String {
+        // This will be implemented with proper ContentResolver in the actual usage
+        return withContext(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val context = getApplicationContext()
+                val contentResolver = context.contentResolver
+                val inputStream = contentResolver.openInputStream(uri)
+                inputStream?.bufferedReader().use { it?.readText() } ?: ""
+            } catch (e: Exception) {
+                android.util.Log.e("ChatViewModel", "Failed to read text: ${e.message}")
+                ""
+            }
+        }
+    }
+
+    /**
+     * Get model's maximum context window size
+     * Returns a conservative default (128k) since backend doesn't provide this info yet
+     */
+    private fun getModelContextWindow(): Int {
+        // Most modern models support at least 128k context
+        // Some models support more (e.g., GPT-4o: 128k, Claude 3.5: 200k, GLM-4: 128k)
+        return 128000
+    }
+
+    private lateinit var applicationContext: android.content.Context
+
+    private fun getApplicationContext(): android.content.Context {
+        if (!::applicationContext.isInitialized) {
+            throw IllegalStateException("ApplicationContext not set")
+        }
+        return applicationContext
+    }
+
+    fun setApplicationContext(context: android.content.Context) {
+        applicationContext = context
+    }
+
     fun sendMessage() {
         if (_inputText.value.isBlank() || isGenerating) return
 
@@ -229,6 +469,13 @@ class ChatViewModel @Inject constructor(
                 null
             }
 
+            // Upload file attachments if present
+            val documents = if (_uiState.value.fileAttachments.isNotEmpty()) {
+                uploadFileAttachments()
+            } else {
+                null
+            }
+
             val request = GenerateMessageRequest(
                 message = message,
                 model_id = _uiState.value.selectedModel?.id ?: "gpt-4o-mini",
@@ -236,7 +483,8 @@ class ChatViewModel @Inject constructor(
                 assistant_id = _uiState.value.selectedAssistant?.id,
                 web_search_enabled = _uiState.value.webSearchMode != WebSearchMode.OFF,
                 web_search_mode = webSearchMode,
-                web_search_provider = webSearchProvider
+                web_search_provider = webSearchProvider,
+                documents = documents
             )
 
             // Call generate-message API
@@ -283,6 +531,9 @@ class ChatViewModel @Inject constructor(
 
             // Start polling for messages with much longer timeout
             pollForMessages(newConversationId)
+
+            // Clear file attachments after successful send
+            clearFileAttachments()
 
         } catch (e: Exception) {
             _uiState.value = _uiState.value.copy(
@@ -1035,7 +1286,8 @@ data class ChatUiState(
     val selectedModel: ModelInfo? = ModelInfo("gpt-4o-mini", "GPT-4o Mini"),
     val availableModels: List<ModelInfo> = emptyList(),
     val selectedAssistant: AssistantEntity? = null,
-    val availableAssistants: List<AssistantEntity> = emptyList()
+    val availableAssistants: List<AssistantEntity> = emptyList(),
+    val fileAttachments: List<FileAttachment> = emptyList()
 )
 
 // Domain model for messages

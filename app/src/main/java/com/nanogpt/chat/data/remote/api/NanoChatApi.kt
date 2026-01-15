@@ -137,4 +137,12 @@ interface NanoChatApi {
     suspend fun updateMessage(
         @Body updates: UpdateMessageRequest
     ): Response<SimpleSuccessResponse>
+
+    // ============== File Upload ==============
+    @POST("/api/storage")
+    suspend fun uploadFile(
+        @Body file: okhttp3.RequestBody,
+        @Header("Content-Type") contentType: String,
+        @Header("x-filename") fileName: String
+    ): Response<FileUploadResponse>
 }

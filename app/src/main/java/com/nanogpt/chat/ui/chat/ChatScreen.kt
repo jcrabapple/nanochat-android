@@ -3,7 +3,10 @@ package com.nanogpt.chat.ui.chat
 import android.content.Context
 import android.content.pm.PackageManager
 import android.Manifest
+import android.net.Uri
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.core.app.ActivityCompat
 import androidx.compose.foundation.layout.Arrangement
@@ -17,11 +20,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
@@ -37,9 +42,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.ChatBubble
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material.icons.outlined.ChatBubble
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.ui.draw.clip
 import androidx.compose.material3.Surface
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.MessageCirclePlus
@@ -74,6 +83,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.nanogpt.chat.ui.chat.components.ChatDrawer
 import com.nanogpt.chat.ui.chat.components.ChatInputBar
+import com.nanogpt.chat.ui.chat.components.FileAttachment
 import com.nanogpt.chat.ui.theme.ThemeManager
 import com.nanogpt.chat.ui.chat.components.MessageBubble
 import com.nanogpt.chat.ui.chat.components.ModelInfo
@@ -109,6 +119,24 @@ fun ChatScreen(
     var showAssistantSheet by remember { mutableStateOf(false) }
     var fullScreenImageUrl by remember { mutableStateOf<String?>(null) }
 
+    // File picker launcher
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            // Get file info
+            val contentResolver = context.contentResolver
+            val fileName = queryFileName(contentResolver, uri)
+            val mimeType = contentResolver.getType(uri) ?: "text/plain"
+            val sizeBytes = queryFileSize(contentResolver, uri)
+
+            // Add attachment to ViewModel
+            if (fileName != null && sizeBytes != null) {
+                viewModel.addFileAttachment(uri, fileName, mimeType, sizeBytes)
+            }
+        }
+    }
+
     // Auto-scroll to bottom on new messages
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
@@ -122,6 +150,14 @@ fun ChatScreen(
             listState.animateScrollToItem(messages.size - 1)
         }
     }
+
+    // Set application context in ViewModel
+    LaunchedEffect(Unit) {
+        viewModel.setApplicationContext(context)
+    }
+
+    // Determine if current model is text generation (not image generation)
+    val isTextGenerationModel = !viewModel.isImageGenerationModel(uiState.selectedModel?.id)
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -172,30 +208,32 @@ fun ChatScreen(
                         containerColor = androidx.compose.ui.graphics.Color.Transparent
                     ),
                     title = {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Column {
-                                Text(
-                                    text = uiState.conversation?.title ?: "Chat",
-                                    style = MaterialTheme.typography.titleMedium
-                                )
-                                uiState.selectedAssistant?.let { assistant ->
-                                    Text(
-                                        text = "${assistant.name} • ${uiState.selectedModel?.name ?: "Unknown Model"}",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        overflow = TextOverflow.Ellipsis,
-                                        maxLines = 1
-                                    )
-                                } ?: uiState.selectedModel?.let { model ->
+                        Column {
+                            Text(
+                                text = uiState.conversation?.title ?: "Chat",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            // Clickable model selector
+                            Row(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .clickable { showModelSelector = true },
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                uiState.selectedModel?.let { model ->
                                     Text(
                                         text = model.name,
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        color = MaterialTheme.colorScheme.primary,
                                         overflow = TextOverflow.Ellipsis,
                                         maxLines = 1
+                                    )
+                                    Icon(
+                                        Icons.Default.ArrowDropDown,
+                                        contentDescription = "Select model",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(16.dp)
                                     )
                                 }
                             }
@@ -213,48 +251,81 @@ fun ChatScreen(
                         }
                     },
                     actions = {
-                        // Save to Karakeep button
-                        Surface(
-                            onClick = {
-                                val currentConversationId = uiState.conversation?.id ?: conversationId
-                                if (currentConversationId != null) {
-                                    viewModel.saveChatToKarakeep { success, message ->
-                                        Toast.makeText(
-                                            context,
-                                            message,
-                                            if (success) Toast.LENGTH_SHORT else Toast.LENGTH_LONG
-                                        ).show()
-                                    }
-                                } else {
-                                    Toast.makeText(
-                                        context,
-                                        "No active conversation to save",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                }
-                            },
-                            modifier = Modifier.padding(end = 8.dp),
-                            shape = RoundedCornerShape(20.dp),
-                            color = MaterialTheme.colorScheme.primaryContainer,
-                            tonalElevation = 2.dp
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
+                        // Web search toggle in top bar
+                        Box {
+                            IconButton(onClick = { showWebSearchConfig = true }) {
                                 Icon(
-                                    Lucide.Bookmark,
-                                    contentDescription = "Save to Karakeep",
-                                    modifier = Modifier.size(18.dp),
-                                    tint = MaterialTheme.colorScheme.onPrimaryContainer
-                                )
-                                Text(
-                                    "Save",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    if (uiState.webSearchMode != WebSearchMode.OFF) {
+                                        Icons.Filled.Search
+                                    } else {
+                                        Icons.Outlined.Search
+                                    },
+                                    contentDescription = if (uiState.webSearchMode != WebSearchMode.OFF) {
+                                        "Web search settings"
+                                    } else {
+                                        "Enable web search"
+                                    },
+                                    tint = if (uiState.webSearchMode != WebSearchMode.OFF) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    }
                                 )
                             }
+                            // Mode badge
+                            if (uiState.webSearchMode != WebSearchMode.OFF) {
+                                val badgeColor = when (uiState.webSearchMode) {
+                                    WebSearchMode.STANDARD -> MaterialTheme.colorScheme.primary
+                                    WebSearchMode.DEEP -> MaterialTheme.colorScheme.tertiary
+                                    WebSearchMode.OFF -> MaterialTheme.colorScheme.surfaceVariant
+                                }
+                                val badgeText = when (uiState.webSearchMode) {
+                                    WebSearchMode.STANDARD -> "STD"
+                                    WebSearchMode.DEEP -> "DEEP"
+                                    WebSearchMode.OFF -> ""
+                                }
+                                Surface(
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .offset(x = (-4).dp, y = (4).dp)
+                                        .clip(RoundedCornerShape(4.dp)),
+                                    color = badgeColor
+                                ) {
+                                    Text(
+                                        text = badgeText,
+                                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onPrimary,
+                                        fontSize = 9.sp
+                                    )
+                                }
+                            }
+                        }
+
+                        // Save to Karakeep button
+                        IconButton(onClick = {
+                            val currentConversationId = uiState.conversation?.id ?: conversationId
+                            if (currentConversationId != null) {
+                                viewModel.saveChatToKarakeep { success, message ->
+                                    Toast.makeText(
+                                        context,
+                                        message,
+                                        if (success) Toast.LENGTH_SHORT else Toast.LENGTH_LONG
+                                    ).show()
+                                }
+                            } else {
+                                Toast.makeText(
+                                    context,
+                                    "No active conversation to save",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }) {
+                            Icon(
+                                Lucide.Bookmark,
+                                contentDescription = "Save to Karakeep",
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
                         }
 
                         IconButton(onClick = {
@@ -282,10 +353,16 @@ fun ChatScreen(
                         onSend = { viewModel.sendMessage() },
                         onStop = { viewModel.stopGeneration() },
                         isGenerating = uiState.isGenerating,
-                        webSearchEnabled = uiState.webSearchMode != WebSearchMode.OFF,
-                        onWebSearchClick = { showWebSearchConfig = true },
-                        selectedModel = uiState.selectedModel,
-                        onModelClick = { showModelSelector = true }
+                        onAttachmentClick = if (isTextGenerationModel) {
+                            { filePickerLauncher.launch("*/*") }
+                        } else {
+                            null
+                        },
+                        fileAttachments = uiState.fileAttachments,
+                        onRemoveAttachment = { attachment ->
+                            viewModel.removeFileAttachment(attachment.uri)
+                        },
+                        showAttachments = isTextGenerationModel
                     )
                 }
             }
@@ -661,4 +738,44 @@ private fun downloadImage(context: Context, imageUrl: String) {
         .build()
 
     imageLoader.enqueue(request)
+}
+
+/**
+ * Query file name from content URI
+ */
+private fun queryFileName(contentResolver: android.content.ContentResolver, uri: Uri): String? {
+    return try {
+        val projection = arrayOf(android.provider.OpenableColumns.DISPLAY_NAME)
+        contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
+            val index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+            if (cursor.moveToFirst() && index >= 0) {
+                cursor.getString(index)
+            } else {
+                null
+            }
+        }
+    } catch (e: Exception) {
+        android.util.Log.e("ChatScreen", "Failed to query file name: ${e.message}")
+        null
+    }
+}
+
+/**
+ * Query file size from content URI
+ */
+private fun queryFileSize(contentResolver: android.content.ContentResolver, uri: Uri): Long? {
+    return try {
+        val projection = arrayOf(android.provider.OpenableColumns.SIZE)
+        contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
+            val index = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE)
+            if (cursor.moveToFirst() && index >= 0) {
+                cursor.getLong(index)
+            } else {
+                null
+            }
+        }
+    } catch (e: Exception) {
+        android.util.Log.e("ChatScreen", "Failed to query file size: ${e.message}")
+        null
+    }
 }
