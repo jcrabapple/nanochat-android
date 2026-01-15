@@ -80,18 +80,15 @@ class ConversationRepository @Inject constructor(
 
                     android.util.Log.d("ConversationRepository", "Fetched ${messageDtos.size} messages from API for conversation $id")
 
-                    // Delete old messages for this conversation first
-                    messageDao.deleteMessagesForConversation(id)
-
-                    // Insert fresh messages
+                    // Upsert messages to avoid full table rewrites
                     val messageEntities = messageDtos.map { messageDto ->
                         messageDto.toEntity(conversationEntity.id)
                     }
                     if (messageEntities.isNotEmpty()) {
                         messageDao.insertMessages(messageEntities)
-                        android.util.Log.d("ConversationRepository", "Inserted ${messageEntities.size} messages into database for conversation $id")
+                        android.util.Log.d("ConversationRepository", "Upserted ${messageEntities.size} messages into database for conversation $id")
                     } else {
-                        android.util.Log.w("ConversationRepository", "No messages to insert for conversation $id")
+                        android.util.Log.w("ConversationRepository", "No messages to upsert for conversation $id")
                     }
                 } else {
                     android.util.Log.e("ConversationRepository", "Failed to fetch messages for conversation $id: ${messagesResponse.code()}")

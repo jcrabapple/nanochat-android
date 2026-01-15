@@ -53,10 +53,10 @@ class ChatViewModel @Inject constructor(
     companion object {
         /** Interval between message polling requests */
         private const val POLLING_INTERVAL_MS = 500L
-        
+
         /** Max consecutive empty polls before considering generation complete (3 seconds total) */
         private const val MAX_EMPTY_POLLS = 6
-        
+
         /** Default fallback model ID when no model is selected */
         private const val DEFAULT_MODEL_ID = "zai-org/glm-4.7"
     }
@@ -170,7 +170,13 @@ class ChatViewModel @Inject constructor(
         try {
             // Start generation
             isGenerating = true
-            _uiState.value = _uiState.value.copy(isGenerating = true, error = null)
+            _uiState.value = _uiState.value.copy(
+                isGenerating = true,
+                error = null,
+                generatedTokenCount = 0,
+                estimatedTokenCount = 0,
+                generationStartTime = System.currentTimeMillis()
+            )
             currentAssistantMessage = StringBuilder()
             currentReasoning = StringBuilder()
 
@@ -280,6 +286,7 @@ class ChatViewModel @Inject constructor(
         var lastMessageCount = 0
         var emptyPolls = 0
         var lastContent = ""
+        val seenMessageIds = mutableSetOf<String>()
 
         while (polling && isGenerating) {
             try {
@@ -300,22 +307,36 @@ class ChatViewModel @Inject constructor(
                         lastContent = currentContent
                         emptyPolls = 0
 
+                        // Update progress tracking (rough estimate: ~4 chars per token)
+                        val estimatedTokens = (currentContent.length / 4).coerceAtLeast(1)
+                        _uiState.value = _uiState.value.copy(
+                            generatedTokenCount = estimatedTokens
+                        )
+
                         // Save messages to database atomically
                         // Use withContext to ensure database operations complete on IO thread
                         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                             try {
+                                val newMessageEntities = mutableListOf<MessageEntity>()
+                                val newMessageIds = mutableSetOf<String>()
+
                                 for (messageDto in messages) {
-                                    val existingMessage = messageRepository.getMessageById(messageDto.id)
-                                    if (existingMessage == null) {
-                                        // Message doesn't exist in DB, insert it
-                                        val messageEntity = messageDto.toEntity(convId)
-                                        messageDao.insertMessage(messageEntity)
-                                    } else if (messageDto.role == "assistant" && currentContent.isNotEmpty()) {
-                                        // Update existing assistant message with new content
+                                    if (seenMessageIds.add(messageDto.id)) {
+                                        newMessageEntities.add(messageDto.toEntity(convId))
+                                        newMessageIds.add(messageDto.id)
+                                    }
+                                }
+
+                                if (newMessageEntities.isNotEmpty()) {
+                                    messageDao.insertMessages(newMessageEntities)
+                                }
+                                // Update existing assistant message with new content if needed
+                                lastAssistantMessage?.let { lastMsg ->
+                                    if (lastMsg.id !in newMessageIds && currentContent.isNotEmpty()) {
                                         messageRepository.updateMessageContent(
-                                            messageId = messageDto.id,
-                                            content = messageDto.content,
-                                            reasoning = messageDto.reasoning
+                                            messageId = lastMsg.id,
+                                            content = lastMsg.content,
+                                            reasoning = lastMsg.reasoning
                                         )
                                     }
                                 }
@@ -336,7 +357,12 @@ class ChatViewModel @Inject constructor(
                     if (lastAssistantMessage != null && currentContent.isNotEmpty() && emptyPolls >= MAX_EMPTY_POLLS) {
                         polling = false
                         isGenerating = false
-                        _uiState.value = _uiState.value.copy(isGenerating = false)
+                        // Clear progress tracking when complete
+                        _uiState.value = _uiState.value.copy(
+                            isGenerating = false,
+                            generatedTokenCount = 0,
+                            estimatedTokenCount = 0
+                        )
 
                         // Start polling for auto-generated conversation title
                         if (!titleGenerated) {
@@ -682,16 +708,25 @@ class ChatViewModel @Inject constructor(
                     if (_uiState.value.conversation?.assistantId != null) {
                         val assistant = assistants.find { it.id == _uiState.value.conversation!!.assistantId }
                         if (assistant != null) {
+                            _uiState.value = _uiState.value.copy(selectedAssistant = assistant)
                             applyAssistantSettings(assistant)
                         }
                     } else if (_uiState.value.selectedAssistant == null) {
                         // For new chats, restore the last selected assistant
                         val lastAssistantId = secureStorage.getLastAssistantId()
-                        if (lastAssistantId != null) {
-                            val lastAssistant = assistants.find { it.id == lastAssistantId }
-                            if (lastAssistant != null) {
-                                _uiState.value = _uiState.value.copy(selectedAssistant = lastAssistant)
-                                applyAssistantSettings(lastAssistant)
+                        val assistant = if (lastAssistantId != null) {
+                            assistants.find { it.id == lastAssistantId }
+                        } else {
+                            // Default to the "Default" assistant, or first available if it doesn't exist
+                            assistants.find { it.name == "Default" } ?: assistants.firstOrNull()
+                        }
+
+                        if (assistant != null) {
+                            _uiState.value = _uiState.value.copy(selectedAssistant = assistant)
+                            applyAssistantSettings(assistant)
+                            // Persist the assistant if no assistant was previously selected
+                            if (lastAssistantId == null) {
+                                secureStorage.saveLastAssistantId(assistant.id)
                             }
                         }
                     }
@@ -702,21 +737,13 @@ class ChatViewModel @Inject constructor(
         }
     }
 
-    fun selectAssistant(assistant: AssistantEntity?) {
+    fun selectAssistant(assistant: AssistantEntity) {
         _uiState.value = _uiState.value.copy(selectedAssistant = assistant)
-        
-        // Persist the selection so new chats default to this assistant
-        secureStorage.saveLastAssistantId(assistant?.id)
 
-        if (assistant != null) {
-            applyAssistantSettings(assistant)
-        } else {
-            // Reset to defaults
-            _uiState.value = _uiState.value.copy(
-                selectedModel = _uiState.value.availableModels.firstOrNull(),
-                webSearchMode = WebSearchMode.OFF
-            )
-        }
+        // Persist the selection so new chats default to this assistant
+        secureStorage.saveLastAssistantId(assistant.id)
+
+        applyAssistantSettings(assistant)
     }
 
     private fun applyAssistantSettings(assistant: AssistantEntity) {
@@ -806,7 +833,11 @@ data class ChatUiState(
     val selectedModel: ModelInfo? = ModelInfo("gpt-4o-mini", "GPT-4o Mini"),
     val availableModels: List<ModelInfo> = emptyList(),
     val selectedAssistant: AssistantEntity? = null,
-    val availableAssistants: List<AssistantEntity> = emptyList()
+    val availableAssistants: List<AssistantEntity> = emptyList(),
+    // Progress tracking for message generation
+    val generatedTokenCount: Int = 0,
+    val estimatedTokenCount: Int = 0,
+    val generationStartTime: Long = 0L
 )
 
 // Domain model for messages

@@ -458,6 +458,31 @@ private fun parseMarkdownBlocks(markdown: String): List<MarkdownBlock> {
         val trimmedLine = line.trim()
 
         when {
+            // Checkbox list items - check FIRST before paragraph accumulation
+            trimmedLine.matches(Regex("^\\s*[-*+]\\s+\\[([ xX])\\]\\s+.+")) -> {
+                val matchResult = Regex("^\\s*[-*+]\\s+\\[([ xX])\\]\\s+(.+)").find(trimmedLine)
+                if (matchResult != null) {
+                    val isChecked = matchResult.groupValues[1].lowercase() == "x"
+                    val text = matchResult.groupValues[2]
+                    blocks.add(MarkdownBlock.Checkbox(text, isChecked))
+                }
+            }
+            // Regular list items (unordered)
+            trimmedLine.matches(Regex("^\\s*[-*+]\\s+.+")) -> {
+                val matchResult = Regex("^\\s*[-*+]\\s+(.+)").find(trimmedLine)
+                if (matchResult != null) {
+                    val text = matchResult.groupValues[1]
+                    blocks.add(MarkdownBlock.Paragraph(text))
+                }
+            }
+            // Ordered list items
+            trimmedLine.matches(Regex("^\\s*\\d+\\.\\s+.+")) -> {
+                val matchResult = Regex("^\\s*\\d+\\.\\s+(.+)").find(trimmedLine)
+                if (matchResult != null) {
+                    val text = matchResult.groupValues[1]
+                    blocks.add(MarkdownBlock.Paragraph(text))
+                }
+            }
             // Table detection - starts with | and contains multiple |
             trimmedLine.startsWith("|") && trimmedLine.endsWith("|") && trimmedLine.count { it == '|' } >= 4 -> {
                 // This is a table row, check if next line is separator
@@ -576,15 +601,6 @@ private fun parseMarkdownBlocks(markdown: String): List<MarkdownBlock> {
                     i = j - 1
                 }
             }
-            // Checkbox list items
-            trimmedLine.matches(Regex("^\\s*[-*+]\\s+\\[([ xX])\\]\\s+.+")) -> {
-                val matchResult = Regex("^\\s*[-*+]\\s+\\[([ xX])\\]\\s+(.+)").find(trimmedLine)
-                if (matchResult != null) {
-                    val isChecked = matchResult.groupValues[1].lowercase() == "x"
-                    val text = matchResult.groupValues[2]
-                    blocks.add(MarkdownBlock.Checkbox(text, isChecked))
-                }
-            }
             // Regular text - accumulate into paragraphs
             else -> {
                 val paragraphLines = mutableListOf<String>()
@@ -592,12 +608,15 @@ private fun parseMarkdownBlocks(markdown: String): List<MarkdownBlock> {
                 while (j < lines.size) {
                     val nextLine = lines[j]
                     val nextTrimmed = nextLine.trim()
+                    // Stop accumulating at block boundaries or list items
                     if (nextTrimmed.isEmpty() ||
                         nextTrimmed.startsWith("```") ||
                         nextTrimmed.startsWith("$$") ||
                         nextTrimmed.startsWith("#") ||
                         nextTrimmed.startsWith(">") ||
-                        (nextTrimmed.startsWith("|") && nextTrimmed.endsWith("|"))) {
+                        (nextTrimmed.startsWith("|") && nextTrimmed.endsWith("|")) ||
+                        nextTrimmed.matches(Regex("^\\s*[-*+]\\s+")) ||
+                        nextTrimmed.matches(Regex("^\\s*\\d+\\.\\s+"))) {
                         break
                     }
                     paragraphLines.add(nextLine)

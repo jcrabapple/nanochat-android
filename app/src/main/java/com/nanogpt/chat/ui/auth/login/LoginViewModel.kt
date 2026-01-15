@@ -29,9 +29,18 @@ class LoginViewModel @Inject constructor(
     fun signIn(onSuccess: () -> Unit) {
         val apiKey = _uiState.value.apiKey.trim()
 
-        if (apiKey.isBlank()) {
-            _uiState.value = _uiState.value.copy(error = "Please enter your API key")
-            return
+        // Validation checks
+        when {
+            apiKey.isBlank() -> {
+                _uiState.value = _uiState.value.copy(error = "Please enter your API key")
+                return
+            }
+            !isValidSessionToken(apiKey) -> {
+                _uiState.value = _uiState.value.copy(
+                    error = "Invalid API key format. API keys should be at least 16 characters and contain only letters, numbers, hyphens, and underscores."
+                )
+                return
+            }
         }
 
         viewModelScope.launch {
@@ -44,8 +53,6 @@ class LoginViewModel @Inject constructor(
                 // Save the API key to secure storage
                 secureStorage.saveSessionToken(apiKey)
 
-                // For now, just save the API key without validation
-                // The real validation will happen when making actual API calls
                 _uiState.value = _uiState.value.copy(isLoading = false)
                 if (BuildConfig.DEBUG) {
                     Log.d("LoginViewModel", "API key saved successfully!")
@@ -61,6 +68,22 @@ class LoginViewModel @Inject constructor(
                 )
             }
         }
+    }
+
+    /**
+     * Validate session token format before storing.
+     * Checks for minimum length and valid characters to prevent malformed tokens.
+     */
+    private fun isValidSessionToken(token: String): Boolean {
+        // Remove any whitespace that user might have accidentally included
+        val cleanToken = token.replace(Regex("\\s+"), "")
+
+        // Basic validation:
+        // - Minimum 16 characters (common for JWT and similar tokens)
+        // - Only contains valid characters (alphanumeric, hyphens, underscores)
+        // - For JWT tokens, should have 3 parts separated by dots (but we're lenient here)
+        return cleanToken.length >= 16 &&
+                cleanToken.matches(Regex("^[a-zA-Z0-9._-]+$"))
     }
 }
 

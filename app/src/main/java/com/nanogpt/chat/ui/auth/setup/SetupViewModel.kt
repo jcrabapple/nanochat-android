@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.annotation.Keep
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.nanogpt.chat.BuildConfig
 import com.nanogpt.chat.data.local.SecureStorage
 import com.nanogpt.chat.utils.DebugLogger
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
@@ -81,7 +82,7 @@ class SetupViewModel @Inject constructor(
                 // Save the backend URL and API key with detailed error handling
                 try {
                     secureStorage.saveBackendUrl(url)
-                    debugLogger.logInfo(TAG, "Backend URL saved successfully: $url")
+                    debugLogger.logInfo(TAG, "Backend URL saved successfully")
                 } catch (e: Exception) {
                     debugLogger.logError(TAG, "Failed to save backend URL", e)
                     throw SetupException("Failed to save backend URL: ${e.message}", e)
@@ -89,10 +90,11 @@ class SetupViewModel @Inject constructor(
 
                 try {
                     secureStorage.saveSessionToken(apiKey)
-                    debugLogger.logInfo(TAG, "API key saved successfully (length: ${apiKey.length})")
+                    // Don't log key details - just confirm it was saved
+                    debugLogger.logInfo(TAG, "Session token saved successfully")
                 } catch (e: Exception) {
-                    debugLogger.logError(TAG, "Failed to save API key", e)
-                    throw SetupException("Failed to save API key: ${e.message}", e)
+                    debugLogger.logError(TAG, "Failed to save session token", e)
+                    throw SetupException("Failed to save session token: ${e.message}", e)
                 }
 
                 // Test API connection by calling /api/models endpoint
@@ -193,13 +195,67 @@ class SetupViewModel @Inject constructor(
     }
 
     /**
-     * Validate URL format more thoroughly
+     * Validate URL format with security checks to prevent SSRF attacks
+     * - Only allows http/https protocols
+     * - Blocks localhost and private IP addresses in release builds
+     * - Validates host format
      */
     private fun isValidUrl(url: String): Boolean {
         return try {
-            java.net.URL(url).toURI()
+            val uri = java.net.URI(url)
+            val scheme = uri.scheme ?: return false
+
+            // Only allow HTTP/HTTPS protocols
+            if (scheme !in listOf("http", "https")) {
+                debugLogger.logWarning(TAG, "URL rejected: invalid protocol '$scheme'")
+                return false
+            }
+
+            val host = uri.host ?: return false
+
+            // In release builds, prevent connection to localhost/private IPs (SSRF protection)
+            if (!BuildConfig.DEBUG) {
+                // Block localhost variants
+                if (host.equals("localhost", ignoreCase = true)) {
+                    debugLogger.logWarning(TAG, "URL rejected: localhost not allowed in release builds")
+                    return false
+                }
+
+                // Block IPv4 loopback (127.x.x.x)
+                if (host.matches(Regex("^127\\."))) {
+                    debugLogger.logWarning(TAG, "URL rejected: IPv4 loopback address not allowed")
+                    return false
+                }
+
+                // Block private IPv4 ranges:
+                // - 10.0.0.0/8
+                // - 172.16.0.0/12 (172.16.x.x to 172.31.x.x)
+                // - 192.168.0.0/16
+                if (host.matches(Regex("^10\\.")) ||
+                    host.matches(Regex("^172\\.(1[6-9]|2[0-9]|3[0-1])\\.")) ||
+                    host.matches(Regex("^192\\.168\\."))) {
+                    debugLogger.logWarning(TAG, "URL rejected: private IP address not allowed")
+                    return false
+                }
+
+                // Block IPv6 loopback (::1)
+                if (host.equals("::1", ignoreCase = true) || host.equals("[::1]", ignoreCase = true)) {
+                    debugLogger.logWarning(TAG, "URL rejected: IPv6 loopback not allowed")
+                    return false
+                }
+            }
+
+            // Validate port range if specified
+            uri.port?.let { port ->
+                if (port !in 1..65535) {
+                    debugLogger.logWarning(TAG, "URL rejected: invalid port $port")
+                    return false
+                }
+            }
+
             true
         } catch (e: Exception) {
+            debugLogger.logWarning(TAG, "URL rejected: parsing error - ${e.message}")
             false
         }
     }

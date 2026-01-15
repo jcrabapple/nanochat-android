@@ -84,7 +84,16 @@ object NetworkModule {
         json: Json,
         secureStorage: SecureStorage
     ): Retrofit {
-        val baseUrl = secureStorage.getBackendUrl() ?: "https://localhost:3000"
+        val baseUrl = secureStorage.getBackendUrl()
+
+        // Security: Don't default to localhost. If no URL is configured, throw an exception.
+        // This prevents accidentally connecting to unintended local servers and makes
+        // configuration errors explicit rather than silently failing with wrong defaults.
+        if (baseUrl.isNullOrBlank()) {
+            throw IllegalStateException(
+                "Backend URL not configured. Please complete setup by launching the app and entering your server URL."
+            )
+        }
 
         return Retrofit.Builder()
             .baseUrl(baseUrl)

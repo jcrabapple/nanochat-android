@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.WindowInsets
@@ -18,6 +20,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
+import androidx.compose.material3.Button
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
@@ -343,6 +346,31 @@ fun ChatScreen(
                             }
                         )
                     }
+
+                    // Show progress indicator when generating
+                    if (uiState.isGenerating && uiState.generatedTokenCount > 0) {
+                        item {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "${uiState.generatedTokenCount} tokens...",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
@@ -405,6 +433,10 @@ fun ChatScreen(
                 onAssistantSelected = { assistant ->
                     viewModel.selectAssistant(assistant)
                     showAssistantSheet = false
+                },
+                onNavigateToAssistants = {
+                    showAssistantSheet = false
+                    onNavigateToAssistants()
                 }
             )
         }
@@ -417,7 +449,8 @@ fun ChatScreen(
 private fun AssistantSelectorSheetContent(
     assistants: List<com.nanogpt.chat.data.local.entity.AssistantEntity>,
     selectedAssistant: com.nanogpt.chat.data.local.entity.AssistantEntity?,
-    onAssistantSelected: (com.nanogpt.chat.data.local.entity.AssistantEntity?) -> Unit
+    onAssistantSelected: (com.nanogpt.chat.data.local.entity.AssistantEntity) -> Unit,
+    onNavigateToAssistants: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -430,24 +463,39 @@ private fun AssistantSelectorSheetContent(
             modifier = Modifier.padding(bottom = 16.dp)
         )
 
-        // None option
-        AssistantOptionItem(
-            name = "No Assistant",
-            description = "Use default settings",
-            firstLetter = "N",
-            isSelected = selectedAssistant == null,
-            onClick = { onAssistantSelected(null) }
-        )
+        // Assistants list with scroll
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 400.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(assistants.size) { index ->
+                val assistant = assistants[index]
+                AssistantOptionItem(
+                    name = assistant.name,
+                    description = assistant.description ?: "No description",
+                    firstLetter = assistant.name.first().toString(),
+                    isSelected = selectedAssistant?.id == assistant.id,
+                    onClick = { onAssistantSelected(assistant) }
+                )
+            }
+        }
 
-        // Assistants list
-        assistants.forEach { assistant ->
-            AssistantOptionItem(
-                name = assistant.name,
-                description = assistant.description ?: "No description",
-                firstLetter = assistant.name.first().toString(),
-                isSelected = selectedAssistant?.id == assistant.id,
-                onClick = { onAssistantSelected(assistant) }
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Manage Assistants button
+        Button(
+            onClick = onNavigateToAssistants,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Icon(
+                imageVector = Icons.Default.Person,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp)
             )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Manage Assistants")
         }
     }
 }

@@ -19,6 +19,29 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+/**
+ * Represents a failed operation that can be retried
+ */
+sealed class FailedOperation {
+    abstract val operationId: String
+    abstract val description: String
+
+    data class DeleteConversation(
+        override val operationId: String,
+        val conversationId: String,
+        val conversationTitle: String,
+        override val description: String = "Failed to delete \"$conversationTitle\" from server"
+    ) : FailedOperation()
+
+    data class MoveToProject(
+        override val operationId: String,
+        val conversationId: String,
+        val conversationTitle: String,
+        val projectId: String?,
+        override val description: String = "Failed to update project for \"$conversationTitle\""
+    ) : FailedOperation()
+}
+
 @HiltViewModel
 class ConversationsListViewModel @Inject constructor(
     private val conversationDao: ConversationDao,
@@ -111,34 +134,125 @@ class ConversationsListViewModel @Inject constructor(
 
     fun deleteConversation(conversationId: String) {
         viewModelScope.launch {
+            // Get conversation title for error messages
+            val conversation = conversationDao.getConversationById(conversationId)
+
             // Delete from local database immediately for visual feedback
             conversationDao.deleteConversationById(conversationId)
 
             // Also try to delete from API
             val result = conversationRepository.deleteConversation(conversationId)
             if (result.isFailure) {
-                // Show error to user since the conversation will come back when app restarts
-                _uiState.value = _uiState.value.copy(
-                    error = "Warning: Could not delete from server. Conversation will reappear on restart."
+                // Add to failed operations for retry
+                val failedOp = FailedOperation.DeleteConversation(
+                    operationId = "delete_$conversationId",
+                    conversationId = conversationId,
+                    conversationTitle = conversation?.title ?: "Unknown"
                 )
+                val currentFailed = _uiState.value.failedOperations.toMutableList()
+                currentFailed.add(failedOp)
+                _uiState.value = _uiState.value.copy(
+                    failedOperations = currentFailed,
+                    error = "Some operations failed. See retry options below."
+                )
+            } else {
+                // Remove any existing failed operation for this conversation
+                val currentFailed = _uiState.value.failedOperations
+                if (currentFailed.any { it.operationId == "delete_$conversationId" }) {
+                    _uiState.value = _uiState.value.copy(
+                        failedOperations = currentFailed.filter { it.operationId != "delete_$conversationId" }
+                    )
+                }
             }
         }
     }
 
     fun moveConversationToProject(conversationId: String, projectId: String?) {
         viewModelScope.launch {
+            // Get conversation title for error messages
+            val conversation = conversationDao.getConversationById(conversationId)
+
             // Update local database immediately for visual feedback
             conversationDao.updateProjectId(conversationId, projectId)
 
             // Also sync to backend API
             val result = conversationRepository.updateConversationProject(conversationId, projectId)
             if (result.isFailure) {
-                // Show error to user since the change will come back on restart
-                _uiState.value = _uiState.value.copy(
-                    error = "Warning: Could not update project on server. Change will revert on restart."
+                // Add to failed operations for retry
+                val failedOp = FailedOperation.MoveToProject(
+                    operationId = "move_${conversationId}_${projectId}",
+                    conversationId = conversationId,
+                    conversationTitle = conversation?.title ?: "Unknown",
+                    projectId = projectId
                 )
+                val currentFailed = _uiState.value.failedOperations.toMutableList()
+                currentFailed.add(failedOp)
+                _uiState.value = _uiState.value.copy(
+                    failedOperations = currentFailed,
+                    error = "Some operations failed. See retry options below."
+                )
+            } else {
+                // Remove any existing failed operation for this conversation
+                val currentFailed = _uiState.value.failedOperations
+                if (currentFailed.any { it.operationId == "move_${conversationId}_${projectId}" }) {
+                    _uiState.value = _uiState.value.copy(
+                        failedOperations = currentFailed.filter { it.operationId != "move_${conversationId}_${projectId}" }
+                    )
+                }
             }
         }
+    }
+
+    /**
+     * Retry a failed operation
+     */
+    fun retryOperation(operation: FailedOperation) {
+        viewModelScope.launch {
+            when (operation) {
+                is FailedOperation.DeleteConversation -> {
+                    val result = conversationRepository.deleteConversation(operation.conversationId)
+                    if (result.isSuccess) {
+                        // Remove from failed operations
+                        _uiState.value = _uiState.value.copy(
+                            failedOperations = _uiState.value.failedOperations.filter { it.operationId != operation.operationId },
+                            error = if (_uiState.value.failedOperations.size <= 1) null else _uiState.value.error
+                        )
+                    } else {
+                        _uiState.value = _uiState.value.copy(
+                            error = "Retry failed: ${result.exceptionOrNull()?.message ?: "Unknown error"}"
+                        )
+                    }
+                }
+                is FailedOperation.MoveToProject -> {
+                    val result = conversationRepository.updateConversationProject(operation.conversationId, operation.projectId)
+                    if (result.isSuccess) {
+                        // Remove from failed operations
+                        _uiState.value = _uiState.value.copy(
+                            failedOperations = _uiState.value.failedOperations.filter { it.operationId != operation.operationId },
+                            error = if (_uiState.value.failedOperations.size <= 1) null else _uiState.value.error
+                        )
+                    } else {
+                        _uiState.value = _uiState.value.copy(
+                            error = "Retry failed: ${result.exceptionOrNull()?.message ?: "Unknown error"}"
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Dismiss a failed operation (user chooses not to retry)
+     */
+    fun dismissOperation(operationId: String) {
+        _uiState.value = _uiState.value.copy(
+            failedOperations = _uiState.value.failedOperations.filter { it.operationId != operationId },
+            error = if (_uiState.value.failedOperations.size <= 1) null else _uiState.value.error
+        )
+    }
+
+    fun clearError() {
+        _uiState.value = _uiState.value.copy(error = null)
     }
 }
 
@@ -146,5 +260,6 @@ data class ConversationsListUiState(
     val conversations: List<ConversationEntity> = emptyList(),
     val projects: List<ProjectEntity> = emptyList(),
     val isLoading: Boolean = true,
-    val error: String? = null
+    val error: String? = null,
+    val failedOperations: List<FailedOperation> = emptyList()
 )

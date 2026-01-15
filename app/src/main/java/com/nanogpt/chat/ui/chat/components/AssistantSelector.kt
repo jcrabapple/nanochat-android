@@ -42,7 +42,7 @@ import com.nanogpt.chat.data.local.entity.AssistantEntity
 fun AssistantSelectorDialog(
     assistants: List<AssistantEntity>,
     selectedAssistant: AssistantEntity?,
-    onAssistantSelected: (AssistantEntity?) -> Unit,
+    onAssistantSelected: (AssistantEntity) -> Unit,
     onDismiss: () -> Unit
 ) {
     Dialog(
@@ -70,17 +70,6 @@ fun AssistantSelectorDialog(
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // None option
-                    item {
-                        AssistantOptionItem(
-                            name = "No Assistant",
-                            description = "Use default settings",
-                            firstLetter = "N",
-                            isSelected = selectedAssistant == null,
-                            onClick = { onAssistantSelected(null) }
-                        )
-                    }
-
                     items(assistants) { assistant ->
                         AssistantOptionItem(
                             name = assistant.name,

@@ -198,7 +198,16 @@ class AssistantRepository @Inject constructor(
             if (response.isSuccessful && response.body() != null) {
                 val dtos = response.body()!!
                 val entities = dtos.map { it.toEntity() }
-                entities.forEach { assistantDao.insertAssistant(it) }
+                entities.forEach { serverAssistant ->
+                    // Preserve local-only fields (description) when refreshing from server
+                    val existing = assistantDao.getAssistantById(serverAssistant.id)
+                    val assistantToSave = if (existing != null && existing.description != null) {
+                        serverAssistant.copy(description = existing.description)
+                    } else {
+                        serverAssistant
+                    }
+                    assistantDao.insertAssistant(assistantToSave)
+                }
                 Result.success(Unit)
             } else {
                 Result.failure(Exception("Failed to refresh: ${response.code()}"))

@@ -276,7 +276,8 @@ class SettingsViewModel @Inject constructor(
 
                 android.util.Log.d("KarakeepTest", "Starting test connection...")
                 android.util.Log.d("KarakeepTest", "URL from settings: $url")
-                android.util.Log.d("KarakeepTest", "API Key from settings: ${apiKey?.take(10)}...")
+                // Don't log API keys - even partial keys can be used for brute force attacks
+                android.util.Log.d("KarakeepTest", "API Key present: ${!apiKey.isNullOrBlank()}")
 
                 if (url.isNullOrBlank() || apiKey.isNullOrBlank()) {
                     val msg = "Please enter both URL and API Key"
