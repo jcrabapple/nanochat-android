@@ -66,6 +66,10 @@ class ChatViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
 
+    // Expose backend URL for image loading
+    val backendUrl: String?
+        get() = secureStorage.getBackendUrl()
+
     private val _messages = MutableStateFlow<List<Message>>(emptyList())
     val messages: StateFlow<List<Message>> = _messages.asStateFlow()
 
@@ -98,6 +102,12 @@ class ChatViewModel @Inject constructor(
             availableModels = defaultModels,
             selectedModel = selectedModel
         )
+
+        // If an assistant is already selected, re-apply its model settings now that models are available
+        _uiState.value.selectedAssistant?.let { assistant ->
+            android.util.Log.d("ChatViewModel", "applyDefaultModels: Re-applying assistant model settings")
+            applyAssistantSettings(assistant)
+        }
     }
 
     init {
@@ -172,10 +182,7 @@ class ChatViewModel @Inject constructor(
             isGenerating = true
             _uiState.value = _uiState.value.copy(
                 isGenerating = true,
-                error = null,
-                generatedTokenCount = 0,
-                estimatedTokenCount = 0,
-                generationStartTime = System.currentTimeMillis()
+                error = null
             )
             currentAssistantMessage = StringBuilder()
             currentReasoning = StringBuilder()
@@ -297,6 +304,15 @@ class ChatViewModel @Inject constructor(
                 if (messagesResponse.isSuccessful && messagesResponse.body() != null) {
                     val messages = messagesResponse.body()!!
 
+                    // Debug logging for image generation
+                    val lastMsg = messages.lastOrNull { it.role == "assistant" }
+                    if (lastMsg != null) {
+                        android.util.Log.d("ChatViewModel", "Last assistant message:")
+                        android.util.Log.d("ChatViewModel", "  Content: ${lastMsg.content}")
+                        android.util.Log.d("ChatViewModel", "  Images: ${lastMsg.images}")
+                        android.util.Log.d("ChatViewModel", "  Annotations: ${lastMsg.annotations}")
+                    }
+
                     // Get the last assistant message
                     val lastAssistantMessage = messages.lastOrNull { it.role == "assistant" }
                     val currentContent = lastAssistantMessage?.content ?: ""
@@ -306,12 +322,6 @@ class ChatViewModel @Inject constructor(
                         lastMessageCount = messages.size
                         lastContent = currentContent
                         emptyPolls = 0
-
-                        // Update progress tracking (rough estimate: ~4 chars per token)
-                        val estimatedTokens = (currentContent.length / 4).coerceAtLeast(1)
-                        _uiState.value = _uiState.value.copy(
-                            generatedTokenCount = estimatedTokens
-                        )
 
                         // Save messages to database atomically
                         // Use withContext to ensure database operations complete on IO thread
@@ -353,15 +363,46 @@ class ChatViewModel @Inject constructor(
                         dto.toDomain()
                     }
 
-                    // Stop polling if we have assistant message content and no new content for MAX_EMPTY_POLLS consecutive polls
-                    if (lastAssistantMessage != null && currentContent.isNotEmpty() && emptyPolls >= MAX_EMPTY_POLLS) {
+                    // Stop polling if we have assistant message content/images and no new content for MAX_EMPTY_POLLS consecutive polls
+                    val hasImages = lastAssistantMessage?.images?.isNotEmpty() == true
+                    val hasImageAnnotations = lastAssistantMessage?.annotations?.any { it.type == "image" } == true
+                    val hasVisualContent = hasImages || hasImageAnnotations
+
+                    // Detect if this is likely image generation (empty or placeholder content, no images yet)
+                    val isLikelyImageGeneration = (currentContent.isEmpty() ||
+                            currentContent.equals("Generated Image", ignoreCase = true) ||
+                            currentContent.equals("Image", ignoreCase = true) ||
+                            currentContent.length < 20) && !hasVisualContent
+
+                    // Check if content is a placeholder that indicates generation is still in progress
+                    val isPlaceholderContent = currentContent.equals("Generating image...", ignoreCase = true) ||
+                                             currentContent.equals("Generating...", ignoreCase = true) ||
+                                             currentContent.isEmpty()
+
+                    // For image generation, only complete when images actually arrive AND we've had empty polls
+                    // For text generation, complete when content exists and we've had empty polls
+                    val shouldComplete = if (isLikelyImageGeneration) {
+                        // Keep polling until images arrive AND stabilize
+                        hasVisualContent && emptyPolls >= MAX_EMPTY_POLLS
+                    } else {
+                        // Normal text completion logic - don't complete if we're waiting for images
+                        if (hasVisualContent) {
+                            // We have images, wait for empty polls
+                            emptyPolls >= MAX_EMPTY_POLLS
+                        } else {
+                            // Text only, complete when content exists and we've had empty polls
+                            !isPlaceholderContent && currentContent.isNotEmpty() && emptyPolls >= MAX_EMPTY_POLLS
+                        }
+                    }
+
+                    android.util.Log.d("ChatViewModel", "Poll state: hasImages=$hasImages, hasVisualContent=$hasVisualContent, isLikelyImageGeneration=$isLikelyImageGeneration, emptyPolls=$emptyPolls, shouldComplete=$shouldComplete")
+
+                    if (lastAssistantMessage != null && shouldComplete) {
+                        android.util.Log.d("ChatViewModel", "Stopping generation - shouldComplete=true")
                         polling = false
                         isGenerating = false
-                        // Clear progress tracking when complete
                         _uiState.value = _uiState.value.copy(
-                            isGenerating = false,
-                            generatedTokenCount = 0,
-                            estimatedTokenCount = 0
+                            isGenerating = false
                         )
 
                         // Start polling for auto-generated conversation title
@@ -685,6 +726,12 @@ class ChatViewModel @Inject constructor(
                         availableModels = models,
                         selectedModel = selectedModel ?: ModelInfo("zai-org/glm-4.7", "GLM-4.7", "zai-org", getProviderLogoUrl("zai-org"))
                     )
+
+                    // If an assistant is already selected, re-apply its model settings now that models are available
+                    _uiState.value.selectedAssistant?.let { assistant ->
+                        android.util.Log.d("ChatViewModel", "fetchUserModels: Re-applying assistant model settings")
+                        applyAssistantSettings(assistant)
+                    }
                 } else {
                     // If API call fails, use default models
                     applyDefaultModels()
@@ -699,7 +746,9 @@ class ChatViewModel @Inject constructor(
     private fun fetchAssistants() {
         viewModelScope.launch {
             try {
+                android.util.Log.d("ChatViewModel", "fetchAssistants: Starting to observe assistants")
                 assistantRepository.getAssistants().collect { assistants ->
+                    android.util.Log.d("ChatViewModel", "fetchAssistants: Received ${assistants.size} assistants")
                     _uiState.value = _uiState.value.copy(
                         availableAssistants = assistants
                     )
@@ -708,26 +757,34 @@ class ChatViewModel @Inject constructor(
                     if (_uiState.value.conversation?.assistantId != null) {
                         val assistant = assistants.find { it.id == _uiState.value.conversation!!.assistantId }
                         if (assistant != null) {
+                            android.util.Log.d("ChatViewModel", "fetchAssistants: Loading conversation assistant: ${assistant.name}")
                             _uiState.value = _uiState.value.copy(selectedAssistant = assistant)
                             applyAssistantSettings(assistant)
                         }
                     } else if (_uiState.value.selectedAssistant == null) {
                         // For new chats, restore the last selected assistant
                         val lastAssistantId = secureStorage.getLastAssistantId()
+                        android.util.Log.d("ChatViewModel", "fetchAssistants: No assistant selected, lastAssistantId=$lastAssistantId")
+
                         val assistant = if (lastAssistantId != null) {
                             assistants.find { it.id == lastAssistantId }
                         } else {
                             // Default to the "Default" assistant, or first available if it doesn't exist
-                            assistants.find { it.name == "Default" } ?: assistants.firstOrNull()
+                            val defaultAssistant = assistants.find { it.name == "Default" } ?: assistants.firstOrNull()
+                            android.util.Log.d("ChatViewModel", "fetchAssistants: Looking for Default assistant, found: ${defaultAssistant?.name}")
+                            defaultAssistant
                         }
 
                         if (assistant != null) {
+                            android.util.Log.d("ChatViewModel", "fetchAssistants: Selecting assistant: ${assistant.name}")
                             _uiState.value = _uiState.value.copy(selectedAssistant = assistant)
                             applyAssistantSettings(assistant)
                             // Persist the assistant if no assistant was previously selected
                             if (lastAssistantId == null) {
                                 secureStorage.saveLastAssistantId(assistant.id)
                             }
+                        } else {
+                            android.util.Log.w("ChatViewModel", "fetchAssistants: No assistants available to select")
                         }
                     }
                 }
@@ -747,10 +804,17 @@ class ChatViewModel @Inject constructor(
     }
 
     private fun applyAssistantSettings(assistant: AssistantEntity) {
+        android.util.Log.d("ChatViewModel", "applyAssistantSettings: Applying settings for ${assistant.name}")
+        android.util.Log.d("ChatViewModel", "  assistant.modelId: ${assistant.modelId}")
+        android.util.Log.d("ChatViewModel", "  availableModels: ${_uiState.value.availableModels.map { it.id }}")
+
         // Apply model
         val model = _uiState.value.availableModels.find { it.id == assistant.modelId }
         if (model != null) {
+            android.util.Log.d("ChatViewModel", "  Found model: ${model.name}")
             _uiState.value = _uiState.value.copy(selectedModel = model)
+        } else {
+            android.util.Log.w("ChatViewModel", "  Model not found for assistant.modelId: ${assistant.modelId}")
         }
 
         // Apply web search settings
@@ -833,11 +897,7 @@ data class ChatUiState(
     val selectedModel: ModelInfo? = ModelInfo("gpt-4o-mini", "GPT-4o Mini"),
     val availableModels: List<ModelInfo> = emptyList(),
     val selectedAssistant: AssistantEntity? = null,
-    val availableAssistants: List<AssistantEntity> = emptyList(),
-    // Progress tracking for message generation
-    val generatedTokenCount: Int = 0,
-    val estimatedTokenCount: Int = 0,
-    val generationStartTime: Long = 0L
+    val availableAssistants: List<AssistantEntity> = emptyList()
 )
 
 // Domain model for messages
@@ -851,6 +911,7 @@ data class Message(
     val createdAt: Long,
     val tokenCount: Int? = null,
     val annotations: List<Annotation>? = null,
+    val images: List<String>? = null,
     val starred: Boolean? = null
 )
 
@@ -875,6 +936,16 @@ fun MessageEntity.toDomain(): Message {
         }
     }
 
+    // Extract images from image annotations
+    val images = annotations?.filter { it.type == "image" }?.mapNotNull { annotation ->
+        if (annotation.data is kotlinx.serialization.json.JsonObject) {
+            val dataObj = annotation.data as kotlinx.serialization.json.JsonObject
+            dataObj["url"]?.jsonPrimitive?.content
+        } else {
+            null
+        }
+    }
+
     return Message(
         id = id,
         conversationId = conversationId,
@@ -885,6 +956,7 @@ fun MessageEntity.toDomain(): Message {
         createdAt = createdAt,
         tokenCount = tokenCount,
         annotations = annotations,
+        images = images,
         starred = starred
     )
 }

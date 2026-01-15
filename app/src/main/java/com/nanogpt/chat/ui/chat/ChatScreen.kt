@@ -1,6 +1,11 @@
 package com.nanogpt.chat.ui.chat
 
+import android.content.Context
+import android.content.pm.PackageManager
+import android.Manifest
 import android.widget.Toast
+import androidx.core.content.ContextCompat
+import androidx.core.app.ActivityCompat
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -76,6 +81,7 @@ import com.nanogpt.chat.ui.chat.components.ModelSelector
 import com.nanogpt.chat.ui.chat.components.WebSearchConfigDialog
 import com.nanogpt.chat.ui.chat.components.WebSearchMode
 import com.nanogpt.chat.ui.chat.components.WebSearchProvider
+import com.nanogpt.chat.ui.chat.components.ImageViewer
 import com.nanogpt.chat.util.copyToClipboard
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -101,6 +107,7 @@ fun ChatScreen(
     var showModelSelector by remember { mutableStateOf(false) }
     var showWebSearchConfig by remember { mutableStateOf(false) }
     var showAssistantSheet by remember { mutableStateOf(false) }
+    var fullScreenImageUrl by remember { mutableStateOf<String?>(null) }
 
     // Auto-scroll to bottom on new messages
     LaunchedEffect(messages.size) {
@@ -176,7 +183,7 @@ fun ChatScreen(
                                 )
                                 uiState.selectedAssistant?.let { assistant ->
                                     Text(
-                                        text = assistant.name,
+                                        text = "${assistant.name} • ${uiState.selectedModel?.name ?: "Unknown Model"}",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         overflow = TextOverflow.Ellipsis,
@@ -325,6 +332,10 @@ fun ChatScreen(
 
                         MessageBubble(
                             message = message,
+                            backendUrl = viewModel.backendUrl,
+                            isGenerating = uiState.isGenerating && isLastAssistantMessage,
+                            onImageClick = { imageUrl -> fullScreenImageUrl = imageUrl },
+                            onImageDownload = { imageUrl -> downloadImage(context, imageUrl) },
                             onCopy = {
                                 context.copyToClipboard(message.content, "Message")
                                 Toast.makeText(
@@ -345,31 +356,6 @@ fun ChatScreen(
                                 viewModel.toggleStar(message.id, starred)
                             }
                         )
-                    }
-
-                    // Show progress indicator when generating
-                    if (uiState.isGenerating && uiState.generatedTokenCount > 0) {
-                        item {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 8.dp),
-                                horizontalArrangement = Arrangement.Center,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "${uiState.generatedTokenCount} tokens...",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
                     }
                 }
             }
@@ -440,6 +426,14 @@ fun ChatScreen(
                 }
             )
         }
+    }
+
+    // Full-screen image viewer
+    if (fullScreenImageUrl != null) {
+        ImageViewer(
+            imageUrl = fullScreenImageUrl!!,
+            onDismiss = { fullScreenImageUrl = null }
+        )
     }
     }
 }
@@ -581,4 +575,89 @@ private fun AssistantOptionItem(
             }
         }
     }
+}
+
+private fun downloadImage(context: Context, imageUrl: String) {
+    val imageLoader = coil.Coil.imageLoader(context)
+
+    val request = coil.request.ImageRequest.Builder(context)
+        .data(imageUrl)
+        .target(
+            onSuccess = { drawable ->
+                // Download in background
+                kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                    try {
+                        val bitmap = if (drawable is android.graphics.drawable.BitmapDrawable) {
+                            drawable.bitmap
+                        } else {
+                            val width = drawable.intrinsicWidth.coerceAtLeast(800)
+                            val height = drawable.intrinsicHeight.coerceAtLeast(600)
+                            val bmp = android.graphics.Bitmap.createBitmap(
+                                width,
+                                height,
+                                android.graphics.Bitmap.Config.ARGB_8888
+                            )
+                            val canvas = android.graphics.Canvas(bmp)
+                            drawable.setBounds(0, 0, width, height)
+                            drawable.draw(canvas)
+                            bmp
+                        }
+
+                        // Use MediaStore to save to Downloads (works on Android 10+ without permissions)
+                        val resolver = context.contentResolver
+                        val fileName = "nanochat_${System.currentTimeMillis()}.png"
+
+                        val contentValues = android.content.ContentValues().apply {
+                            put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, fileName)
+                            put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/png")
+                            put(android.provider.MediaStore.Images.Media.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS)
+                            put(android.provider.MediaStore.Images.Media.IS_PENDING, 1)
+                        }
+
+                        val uri = resolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+
+                        if (uri != null) {
+                            resolver.openOutputStream(uri)?.use { out ->
+                                bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out)
+                            }
+
+                            contentValues.clear()
+                            contentValues.put(android.provider.MediaStore.Images.Media.IS_PENDING, 0)
+                            resolver.update(uri, contentValues, null, null)
+
+                            // Show success on main thread
+                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                android.widget.Toast.makeText(
+                                    context,
+                                    "Image saved to Downloads",
+                                    android.widget.Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        } else {
+                            throw Exception("Failed to create MediaStore entry")
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.e("ChatScreen", "Failed to download image: ${e.message}", e)
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                            android.widget.Toast.makeText(
+                                context,
+                                "Failed to save image: ${e.message}",
+                                android.widget.Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    }
+                }
+            },
+            onError = { errorDrawable ->
+                android.util.Log.e("ChatScreen", "Failed to load image for download")
+                android.widget.Toast.makeText(
+                    context,
+                    "Failed to load image",
+                    android.widget.Toast.LENGTH_SHORT
+                ).show()
+            }
+        )
+        .build()
+
+    imageLoader.enqueue(request)
 }

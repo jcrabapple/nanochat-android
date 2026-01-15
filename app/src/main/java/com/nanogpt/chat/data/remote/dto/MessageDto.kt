@@ -15,10 +15,18 @@ data class MessageDto(
     val modelId: String? = null,
     val annotations: List<AnnotationDto>? = null,
     val followUpSuggestions: List<String>? = null,
+    val images: List<ImageDto>? = null,
     val createdAt: String,
     val tokenCount: Int? = null,
     val costUsd: Double? = null,
     val starred: Boolean? = null
+)
+
+@Serializable
+data class ImageDto(
+    val url: String,
+    val storage_id: String? = null,
+    val fileName: String? = null
 )
 
 @Serializable
@@ -41,6 +49,7 @@ fun MessageDto.toDomain(): Message {
             .time,
         tokenCount = tokenCount,
         annotations = annotations?.map { Annotation(it.type, it.data) },
+        images = images?.map { it.url },
         starred = starred
     )
 }

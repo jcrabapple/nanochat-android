@@ -147,6 +147,22 @@ fun MessageDto.toEntity(conversationId: String): MessageEntity {
     val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.getDefault())
     val json = Json { ignoreUnknownKeys = true }
 
+    // Combine annotations and images into a single JSON structure
+    val allAnnotations = annotations?.toMutableList() ?: mutableListOf()
+    // Add images as annotations if they exist
+    images?.forEach { imageDto ->
+        allAnnotations.add(
+            com.nanogpt.chat.data.remote.dto.AnnotationDto(
+                type = "image",
+                data = kotlinx.serialization.json.buildJsonObject {
+                    put("url", kotlinx.serialization.json.JsonPrimitive(imageDto.url))
+                    imageDto.storage_id?.let { put("storage_id", kotlinx.serialization.json.JsonPrimitive(it)) }
+                    imageDto.fileName?.let { put("fileName", kotlinx.serialization.json.JsonPrimitive(it)) }
+                }
+            )
+        )
+    }
+
     return MessageEntity(
         id = id,
         conversationId = conversationId,
@@ -154,7 +170,7 @@ fun MessageDto.toEntity(conversationId: String): MessageEntity {
         content = content,
         reasoning = reasoning,
         modelId = modelId,
-        annotationsJson = annotations?.let { json.encodeToString(it) },
+        annotationsJson = if (allAnnotations.isNotEmpty()) json.encodeToString(allAnnotations) else null,
         followUpSuggestions = followUpSuggestions?.let { json.encodeToString(it) },
         createdAt = sdf.parse(createdAt)?.time ?: System.currentTimeMillis(),
         tokenCount = tokenCount,

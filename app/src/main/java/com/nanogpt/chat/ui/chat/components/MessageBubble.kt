@@ -12,6 +12,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import coil.compose.AsyncImage
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -21,10 +24,13 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -54,6 +60,10 @@ fun MessageBubble(
     onCopy: () -> Unit = {},
     onRegenerate: (() -> Unit)? = null,
     onStar: ((Boolean) -> Unit)? = null,
+    onImageClick: (String) -> Unit = {},
+    onImageDownload: (String) -> Unit = {},
+    backendUrl: String? = null,
+    isGenerating: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val isUser = message.role == "user"
@@ -158,6 +168,92 @@ fun MessageBubble(
                 modifier = Modifier
             )
 
+            // Show loading placeholder when generating an image
+            if (isGenerating && !isUser && message.images.isNullOrEmpty()) {
+                val isImageGeneration = message.content.equals("Generated Image", ignoreCase = true) ||
+                        message.content.equals("Generating image...", ignoreCase = true) ||
+                        message.content.isEmpty() ||
+                        message.content.length < 20 ||
+                        message.annotations?.any { it.type == "image" } == true
+
+                if (isImageGeneration) {
+                    Spacer(modifier = Modifier.size(8.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(250.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.surface),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(48.dp),
+                                strokeWidth = 3.dp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = "Generating image...",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Images from message.images array
+            message.images?.forEach { imageUrl ->
+                Spacer(modifier = Modifier.size(8.dp))
+                // Construct full URL if imageUrl is a relative path
+                val fullImageUrl = if (imageUrl.startsWith("/")) {
+                    // Relative path - prepend backend URL
+                    val baseUrl = backendUrl?.trimEnd('/')
+                    if (baseUrl != null) {
+                        "$baseUrl$imageUrl"
+                    } else {
+                        imageUrl
+                    }
+                } else {
+                    // Already a full URL
+                    imageUrl
+                }
+
+                // Image display with download button overlay
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 400.dp)
+                        .clickable { onImageClick(fullImageUrl) }
+                ) {
+                    AsyncImage(
+                        model = fullImageUrl,
+                        contentDescription = "Generated image (tap to view full screen)",
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    // Translucent download button
+                    FloatingActionButton(
+                        onClick = { onImageDownload(fullImageUrl) },
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(12.dp)
+                            .size(40.dp),
+                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Download,
+                            contentDescription = "Download image",
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            }
+
             // Web search annotations
             message.annotations?.filter { it.type == "web-search" }?.forEach { annotation ->
                 Spacer(modifier = Modifier.size(8.dp))
@@ -167,6 +263,17 @@ fun MessageBubble(
                         // Handle URL click
                     }
                 )
+            }
+
+            // Image annotations (only render if NOT in message.images to avoid duplicates)
+            if (message.images.isNullOrEmpty()) {
+                message.annotations?.filter { it.type == "image" }?.forEach { annotation ->
+                    Spacer(modifier = Modifier.size(8.dp))
+                    ImageAnnotation(
+                        annotation = annotation,
+                        backendUrl = backendUrl
+                    )
+                }
             }
 
             // Action buttons for assistant messages
@@ -268,5 +375,50 @@ private fun WebSearchAnnotation(
             jsonData = data,
             onUrlClick = onUrlClick
         )
+    }
+}
+
+@Composable
+private fun ImageAnnotation(
+    annotation: Annotation,
+    backendUrl: String? = null
+) {
+    // Extract image URL from annotation data
+    val imageUrl = if (annotation.data is JsonObject) {
+        val dataObj = annotation.data as JsonObject
+        // Try to get the URL field - it might be a string primitive or nested object
+        dataObj["url"]?.toString()?.replace("\"", "")  // Remove quotes if it's a string primitive
+            ?: dataObj["image"]?.toString()?.replace("\"", "")
+    } else {
+        null
+    }
+
+    imageUrl?.let { url ->
+        // Construct full URL if imageUrl is a relative path
+        val fullImageUrl = if (url.startsWith("/")) {
+            val baseUrl = backendUrl?.trimEnd('/')
+            if (baseUrl != null) {
+                "$baseUrl$url"
+            } else {
+                url
+            }
+        } else {
+            url
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(4.dp)
+        ) {
+            // Image display
+            AsyncImage(
+                model = fullImageUrl,
+                contentDescription = "Generated image",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 400.dp)
+            )
+        }
     }
 }
