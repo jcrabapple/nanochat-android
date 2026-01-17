@@ -146,7 +146,7 @@ val TokyoNightDarkColorScheme: ColorScheme = darkColorScheme(
     primary = TokyoNightBlue,
     onPrimary = TokyoNightBg,
     primaryContainer = TokyoNightBlue0,
-    onPrimaryContainer = TokyoNightBg,
+    onPrimaryContainer = Color.White,
 
     secondary = TokyoNightCyan,
     onSecondary = TokyoNightBg,
@@ -183,7 +183,7 @@ val TokyoNightStormColorScheme: ColorScheme = darkColorScheme(
     primary = TokyoStormBlue,
     onPrimary = TokyoStormBg,
     primaryContainer = TokyoStormBlue0,
-    onPrimaryContainer = TokyoStormBg,
+    onPrimaryContainer = Color.White,
 
     secondary = TokyoStormCyan,
     onSecondary = TokyoStormBg,

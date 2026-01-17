@@ -38,7 +38,7 @@ object NetworkModule {
         return HttpLoggingInterceptor().apply {
             // Only log in debug builds to prevent sensitive data exposure in release
             level = if (BuildConfig.DEBUG) {
-                HttpLoggingInterceptor.Level.BODY
+                HttpLoggingInterceptor.Level.HEADERS
             } else {
                 HttpLoggingInterceptor.Level.NONE
             }

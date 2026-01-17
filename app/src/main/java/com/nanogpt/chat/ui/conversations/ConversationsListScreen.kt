@@ -70,6 +70,17 @@ fun ConversationsListScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showMenu by remember { mutableStateOf(false) }
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+
+    // Scroll to top whenever conversations list changes OR whenever screen is displayed
+    // Using the conversations size and first item ID as keys ensures we scroll on new additions
+    val firstConversationId = uiState.conversations.firstOrNull()?.id
+    androidx.compose.runtime.LaunchedEffect(firstConversationId, uiState.conversations.size) {
+        android.util.Log.d("ConversationsListScreen", "Conversations changed or screen displayed, size=${uiState.conversations.size}, scrolling to top")
+        if (uiState.conversations.isNotEmpty()) {
+            listState.scrollToItem(0)
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -112,6 +123,7 @@ fun ConversationsListScreen(
             }
         } else {
             LazyColumn(
+                state = listState,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding),

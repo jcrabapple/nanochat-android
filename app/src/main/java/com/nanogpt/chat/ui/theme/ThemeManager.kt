@@ -157,7 +157,8 @@ class ThemeManager @Inject constructor(
      */
     @Composable
     fun useLightStatusBarIcons(): Boolean {
-        return !isDarkMode.value
+        val isDark by isDarkMode.collectAsState()
+        return !isDark
     }
 
     /**

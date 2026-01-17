@@ -54,7 +54,8 @@ import androidx.core.net.toUri
 @Composable
 fun SimpleMarkdownText(
     markdown: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    color: Color = MaterialTheme.colorScheme.onSurface
 ) {
     // Normalize various quote characters to standard backtick
     val normalizedMarkdown = markdown
@@ -79,22 +80,27 @@ fun SimpleMarkdownText(
                     language = block.language
                 )
                 is MarkdownBlock.MathBlock -> MathBlock(
-                    math = block.math
+                    math = block.math,
+                    textColor = color
                 )
                 is MarkdownBlock.Heading -> HeadingBlock(
                     text = block.text,
-                    level = block.level
+                    level = block.level,
+                    color = color
                 )
                 is MarkdownBlock.Table -> MarkdownTable(
                     headers = block.headers,
-                    rows = block.rows
+                    rows = block.rows,
+                    textColor = color
                 )
                 is MarkdownBlock.BlockQuote -> BlockQuoteBlock(
-                    text = block.text
+                    text = block.text,
+                    textColor = color
                 )
                 is MarkdownBlock.Checkbox -> CheckboxBlock(
                     text = block.text,
-                    checked = block.checked
+                    checked = block.checked,
+                    textColor = color
                 )
                 is MarkdownBlock.HorizontalRule -> HorizontalRuleBlock()
                 is MarkdownBlock.Paragraph -> {
@@ -104,13 +110,13 @@ fun SimpleMarkdownText(
                             text = block.text,
                             surfaceVariantColor = MaterialTheme.colorScheme.surfaceVariant,
                             tertiaryContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                            onSurfaceColor = MaterialTheme.colorScheme.onSurface
+                            onSurfaceColor = color // Use the passed color here
                         )
                     }
                     ClickableText(
                         text = annotatedString,
                         style = MaterialTheme.typography.bodyLarge.copy(
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = color // Use the passed color here
                         ),
                         onClick = { offset ->
                             // Check if click was on a link
@@ -221,7 +227,8 @@ private fun TerminalCodeBlock(
 @Composable
 private fun MathBlock(
     math: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    textColor: Color = MaterialTheme.colorScheme.onSurface
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -234,7 +241,7 @@ private fun MathBlock(
             fontFamily = FontFamily.Monospace,
             fontSize = 15.sp,
             fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-            color = MaterialTheme.colorScheme.onSurface
+            color = textColor
         )
     }
 }
@@ -246,7 +253,8 @@ private fun MathBlock(
 private fun HeadingBlock(
     text: String,
     level: Int,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    color: Color = MaterialTheme.colorScheme.primary
 ) {
     val (fontSize, fontWeight) = when (level) {
         1 -> 24.sp to FontWeight.Bold
@@ -260,7 +268,7 @@ private fun HeadingBlock(
         style = MaterialTheme.typography.titleLarge.copy(
             fontSize = fontSize,
             fontWeight = fontWeight,
-            color = MaterialTheme.colorScheme.primary
+            color = color
         )
     )
 }
@@ -272,7 +280,8 @@ private fun HeadingBlock(
 private fun MarkdownTable(
     headers: List<String>,
     rows: List<List<String>>,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    textColor: Color = MaterialTheme.colorScheme.onSurface
 ) {
     Surface(
         modifier = modifier
@@ -308,7 +317,7 @@ private fun MarkdownTable(
                                 text = header,
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
+                                color = textColor
                             )
                         }
                     }
@@ -325,7 +334,7 @@ private fun MarkdownTable(
                                 Text(
                                     text = cell,
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurface
+                                    color = textColor
                                 )
                             }
                         }
@@ -352,7 +361,8 @@ private fun MarkdownTable(
 @Composable
 private fun BlockQuoteBlock(
     text: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    textColor: Color = MaterialTheme.colorScheme.onSurface
 ) {
     val borderColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
     val bgColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
@@ -372,7 +382,7 @@ private fun BlockQuoteBlock(
             style = MaterialTheme.typography.bodyLarge.copy(
                 fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
             ),
-            color = MaterialTheme.colorScheme.onSurface
+            color = textColor
         )
     }
 }
@@ -384,7 +394,8 @@ private fun BlockQuoteBlock(
 private fun CheckboxBlock(
     text: String,
     checked: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    textColor: Color = MaterialTheme.colorScheme.onSurface
 ) {
     Row(
         modifier = modifier.fillMaxWidth(),
@@ -413,7 +424,7 @@ private fun CheckboxBlock(
         Text(
             text = text,
             style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurface
+            color = textColor
         )
     }
 }
@@ -594,7 +605,7 @@ private fun parseMarkdownBlocks(markdown: String): List<MarkdownBlock> {
                 }
                 // Filter trailing empty lines
                 while (quoteLines.isNotEmpty() && quoteLines.last().isBlank()) {
-                    quoteLines.removeLast()
+                    quoteLines.removeAt(quoteLines.lastIndex)
                 }
                 if (quoteLines.isNotEmpty()) {
                     blocks.add(MarkdownBlock.BlockQuote(quoteLines.joinToString("\n")))

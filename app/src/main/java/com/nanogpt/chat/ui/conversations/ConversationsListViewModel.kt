@@ -67,6 +67,11 @@ class ConversationsListViewModel @Inject constructor(
     private fun observeConversations() {
         viewModelScope.launch {
             conversationDao.getAllConversations().collect { conversations ->
+                android.util.Log.d("ConversationsListViewModel", "===== DATABASE UPDATED =====")
+                android.util.Log.d("ConversationsListViewModel", "Total conversations: ${conversations.size}")
+                conversations.forEach { conv ->
+                    android.util.Log.d("ConversationsListViewModel", "  - ${conv.id}: ${conv.title}")
+                }
                 _uiState.value = _uiState.value.copy(
                     conversations = conversations,
                     isLoading = false
@@ -89,16 +94,21 @@ class ConversationsListViewModel @Inject constructor(
      */
     private fun listenForSyncEvents() {
         viewModelScope.launch {
+            android.util.Log.d("ConversationsListViewModel", "Starting to listen for sync events...")
             conversationSyncManager.conversationUpdates.collect { update ->
+                android.util.Log.d("ConversationsListViewModel", "===== SYNC EVENT RECEIVED =====")
+                android.util.Log.d("ConversationsListViewModel", "Update type: ${update::class.simpleName}")
                 when (update) {
                     is ConversationUpdate.Created,
                     is ConversationUpdate.Updated,
                     is ConversationUpdate.Refreshed -> {
                         // Refresh from API to get the latest data
+                        android.util.Log.d("ConversationsListViewModel", "Triggering refresh from API...")
                         loadConversationsFromApi()
                     }
                     is ConversationUpdate.Deleted -> {
                         // Refresh to show deleted conversations are gone
+                        android.util.Log.d("ConversationsListViewModel", "Triggering refresh after deletion...")
                         loadConversationsFromApi()
                     }
                 }
@@ -108,11 +118,15 @@ class ConversationsListViewModel @Inject constructor(
 
     private fun loadConversationsFromApi() {
         viewModelScope.launch {
+            android.util.Log.d("ConversationsListViewModel", "===== LOAD FROM API =====")
             val result = conversationRepository.fetchConversationsFromApi()
             if (result.isFailure) {
+                android.util.Log.e("ConversationsListViewModel", "Failed to load from API: ${result.exceptionOrNull()?.message}")
                 _uiState.value = _uiState.value.copy(
                     error = result.exceptionOrNull()?.message
                 )
+            } else {
+                android.util.Log.d("ConversationsListViewModel", "Successfully loaded from API")
             }
         }
     }

@@ -143,8 +143,9 @@ class MessageRepository @Inject constructor(
 }
 
 // Extension function to convert DTO to Entity
-fun MessageDto.toEntity(conversationId: String): MessageEntity {
-    val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.getDefault())
+fun MessageDto.toEntity(conversationId: String, localId: String? = null): MessageEntity {
+    val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
+    sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
     val json = Json { ignoreUnknownKeys = true }
 
     // Combine annotations and images into a single JSON structure
@@ -176,6 +177,7 @@ fun MessageDto.toEntity(conversationId: String): MessageEntity {
         tokenCount = tokenCount,
         costUsd = costUsd,
         starred = starred,
+        localId = localId,
         syncStatus = SyncStatus.SYNCED
     )
 }

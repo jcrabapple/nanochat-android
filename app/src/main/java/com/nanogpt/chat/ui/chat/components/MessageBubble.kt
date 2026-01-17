@@ -63,9 +63,12 @@ fun MessageBubble(
     onStar: ((Boolean) -> Unit)? = null,
     onImageClick: (String) -> Unit = {},
     onImageDownload: (String) -> Unit = {},
+    onVideoClick: (String) -> Unit = {},
+    onVideoDownload: (String) -> Unit = {},
     backendUrl: String? = null,
     isGenerating: Boolean = false,
     isImageGenerationModel: Boolean = false,
+    isVideoGenerationModel: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val isUser = message.role == "user"
@@ -107,7 +110,7 @@ fun MessageBubble(
                 .clip(RoundedCornerShape(16.dp))
                 .background(
                     if (isUser) {
-                        Color(0xFF2196F3) // Blue for user messages
+                        MaterialTheme.colorScheme.primaryContainer
                     } else {
                         MaterialTheme.colorScheme.surfaceVariant
                     }
@@ -167,7 +170,8 @@ fun MessageBubble(
             // Main content with markdown rendering
             SimpleMarkdownText(
                 markdown = message.content,
-                modifier = Modifier
+                modifier = Modifier,
+                color = if (isUser) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
             )
 
             // Show loading placeholder when generating an image
@@ -213,6 +217,43 @@ fun MessageBubble(
                             .height(2.dp),
                         color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
                     )
+                }
+            }
+
+            // Show loading placeholder when generating a video
+            if (isGenerating && !isUser && message.videos.isNullOrEmpty()) {
+                // Check if this is a video generation model based on capabilities
+                val isVideoGeneration = isVideoGenerationModel ||
+                        message.content.equals("Generated Video", ignoreCase = true) ||
+                        message.content.equals("Generating video...", ignoreCase = true) ||
+                        message.annotations?.any { it.type == "video" } == true
+
+                if (isVideoGeneration) {
+                    Spacer(modifier = Modifier.size(8.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(200.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.surface),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(48.dp),
+                                strokeWidth = 3.dp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = "Generating video...",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
             }
 
@@ -265,6 +306,32 @@ fun MessageBubble(
                 }
             }
 
+            // Videos from message.videos array
+            message.videos?.forEach { videoUrl ->
+                Spacer(modifier = Modifier.size(8.dp))
+                // Construct full URL if videoUrl is a relative path
+                val fullVideoUrl = if (videoUrl.startsWith("/")) {
+                    // Relative path - prepend backend URL
+                    val baseUrl = backendUrl?.trimEnd('/')
+                    if (baseUrl != null) {
+                        "$baseUrl$videoUrl"
+                    } else {
+                        videoUrl
+                    }
+                } else {
+                    // Already a full URL
+                    videoUrl
+                }
+
+                // Inline video player
+                InlineVideoPlayer(
+                    videoUrl = fullVideoUrl,
+                    onFullscreen = { onVideoClick(fullVideoUrl) },
+                    onDownload = { onVideoDownload(fullVideoUrl) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
             // Web search annotations
             message.annotations?.filter { it.type == "web-search" }?.forEach { annotation ->
                 Spacer(modifier = Modifier.size(8.dp))
@@ -287,6 +354,19 @@ fun MessageBubble(
                 }
             }
 
+            // Video annotations (render from annotations when not in videos array)
+            if (message.videos.isNullOrEmpty()) {
+                message.annotations?.filter { it.type == "video" }?.forEach { annotation ->
+                    Spacer(modifier = Modifier.size(8.dp))
+                    VideoAnnotation(
+                        annotation = annotation,
+                        backendUrl = backendUrl,
+                        onFullscreen = onVideoClick,
+                        onDownload = onVideoDownload
+                    )
+                }
+            }
+
             // Action buttons for assistant messages
             if (!isUser) {
                 Spacer(modifier = Modifier.size(8.dp))
@@ -295,7 +375,7 @@ fun MessageBubble(
                     horizontalArrangement = Arrangement.End,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Metadata (model, tokens)
+                    // Metadata (model, tokens, cost, response time)
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -315,18 +395,38 @@ fun MessageBubble(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                             )
                         }
+                        message.costUsd?.let { cost ->
+                            val costString = if (cost < 0.01) {
+                                String.format("%.4f", cost)
+                            } else {
+                                String.format("%.2f", cost)
+                            }
+                            Text(
+                                "$$costString",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            )
+                        }
+                        message.responseTimeMs?.let { timeMs ->
+                            val timeSeconds = timeMs / 1000.0
+                            Text(
+                                String.format("%.1fs", timeSeconds),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            )
+                        }
                     }
 
                     // Regenerate button
                     if (onRegenerate != null) {
                         IconButton(
                             onClick = onRegenerate,
-                            modifier = Modifier.size(28.dp)
+                            modifier = Modifier.size(40.dp)
                         ) {
                             Icon(
                                 Icons.Filled.Refresh,
                                 contentDescription = "Regenerate",
-                                modifier = Modifier.size(16.dp),
+                                modifier = Modifier.size(20.dp),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                             )
                         }
@@ -336,12 +436,12 @@ fun MessageBubble(
                     if (onStar != null) {
                         IconButton(
                             onClick = { onStar(!(message.starred == true)) },
-                            modifier = Modifier.size(28.dp)
+                            modifier = Modifier.size(40.dp)
                         ) {
                             Icon(
                                 if (message.starred == true) Icons.Filled.Star else Icons.Outlined.StarBorder,
                                 contentDescription = if (message.starred == true) "Unstar" else "Star",
-                                modifier = Modifier.size(16.dp),
+                                modifier = Modifier.size(20.dp),
                                 tint = if (message.starred == true) {
                                     Color(0xFFFFD700) // Gold color for starred
                                 } else {
@@ -354,12 +454,12 @@ fun MessageBubble(
                     // Copy button
                     IconButton(
                         onClick = onCopy,
-                        modifier = Modifier.size(28.dp)
+                        modifier = Modifier.size(40.dp)
                     ) {
                         Icon(
                             Icons.Filled.ContentCopy,
                             contentDescription = "Copy",
-                            modifier = Modifier.size(16.dp),
+                            modifier = Modifier.size(20.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                         )
                     }
@@ -431,5 +531,44 @@ private fun ImageAnnotation(
                     .heightIn(max = 400.dp)
             )
         }
+    }
+}
+
+@Composable
+private fun VideoAnnotation(
+    annotation: Annotation,
+    backendUrl: String? = null,
+    onFullscreen: (String) -> Unit,
+    onDownload: (String) -> Unit
+) {
+    // Extract video URL from annotation data
+    val videoUrl = if (annotation.data is JsonObject) {
+        val dataObj = annotation.data as JsonObject
+        dataObj["url"]?.toString()?.replace("\"", "")  // Remove quotes if it's a string primitive
+            ?: dataObj["video"]?.toString()?.replace("\"", "")
+    } else {
+        null
+    }
+
+    videoUrl?.let { url ->
+        // Construct full URL if videoUrl is a relative path
+        val fullVideoUrl = if (url.startsWith("/")) {
+            val baseUrl = backendUrl?.trimEnd('/')
+            if (baseUrl != null) {
+                "$baseUrl$url"
+            } else {
+                url
+            }
+        } else {
+            url
+        }
+
+        // Video display with inline player
+        InlineVideoPlayer(
+            videoUrl = fullVideoUrl,
+            onFullscreen = { onFullscreen(fullVideoUrl) },
+            onDownload = { onDownload(fullVideoUrl) },
+            modifier = Modifier.fillMaxWidth()
+        )
     }
 }

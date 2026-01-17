@@ -42,7 +42,12 @@ class StreamingManager @Inject constructor(
         data class TokenReceived(val token: String) : StreamEvent()
         data class ContentDelta(val content: String) : StreamEvent()
         data class ReasoningDelta(val reasoning: String) : StreamEvent()
-        data class Complete(val messageId: String? = null) : StreamEvent()
+        data class Complete(
+            val messageId: String? = null,
+            val tokenCount: Int? = null,
+            val costUsd: Double? = null,
+            val responseTimeMs: Long? = null
+        ) : StreamEvent()
         data class Error(val error: String) : StreamEvent()
         data class ConversationCreated(val conversationId: String, val title: String) : StreamEvent()
     }
@@ -67,7 +72,7 @@ class StreamingManager @Inject constructor(
             ).toRequestBody("application/json".toMediaType())
 
             val httpRequest = Request.Builder()
-                .url("$backendUrl/api/generate-message")
+                .url("$backendUrl/api/generate-message/stream")  // Use streaming endpoint
                 .post(requestBody)
                 .header("Authorization", "Bearer ${secureStorage.getSessionToken()}")
                 .header("Accept", "text/event-stream")
@@ -91,43 +96,62 @@ class StreamingManager @Inject constructor(
             BufferedReader(InputStreamReader(body.byteStream())).use { reader ->
                 var line: String? = null
                 var conversationId: String? = request.conversation_id
+                var messageId: String? = null
                 var lastEventTime = System.currentTimeMillis()
+                var eventCount = 0
+                var currentEventType: String? = null
+                var currentData: String? = null
+
+                android.util.Log.d("StreamingManager", "Starting SSE stream reading...")
 
                 while (currentCall?.isCanceled() != true && reader.readLine().also { line = it } != null) {
                     // Check for timeout (no data for 5 minutes)
                     val now = System.currentTimeMillis()
                     if (now - lastEventTime > STREAM_TIMEOUT_MS) {
+                        android.util.Log.e("StreamingManager", "Stream timeout after 5 minutes")
                         onEvent(StreamEvent.Error("Stream timeout after 5 minutes"))
                         break
                     }
 
                     val currentLine = line
+                    android.util.Log.v("StreamingManager", "SSE line: $currentLine")
+
                     when {
-                        currentLine?.startsWith("data: ") == true -> {
-                            lastEventTime = now
-                            val data = currentLine.removePrefix("data: ").trim()
+                        // Empty line marks the end of an event
+                        currentLine?.isEmpty() == true -> {
+                            // Process the complete event
+                            if (currentEventType != null && currentData != null) {
+                                lastEventTime = now
+                                eventCount++
+                                android.util.Log.d("StreamingManager", "SSE event: $currentEventType, data: $currentData")
 
-                            if (data == "[DONE]") {
-                                onEvent(StreamEvent.Complete(conversationId))
-                                break
-                            }
-
-                            try {
-                                val jsonElement = Json.parseToJsonElement(data)
-                                handleSseData(jsonElement, conversationId, onEvent) { newConvId ->
+                                handleSseEvent(currentEventType, currentData, conversationId, messageId, onEvent) { newConvId, newMsgId ->
                                     conversationId = newConvId
+                                    messageId = newMsgId
                                 }
-                            } catch (e: Exception) {
-                                // Log parse error but continue streaming
-                                android.util.Log.e("StreamingManager", "Error parsing SSE data: ${e.message}")
                             }
+                            // Reset for next event
+                            currentEventType = null
+                            currentData = null
+                        }
+                        currentLine?.startsWith("event: ") == true -> {
+                            currentEventType = currentLine.removePrefix("event: ").trim()
+                        }
+                        currentLine?.startsWith("data: ") == true -> {
+                            currentData = currentLine.removePrefix("data: ").trim()
                         }
                     }
                 }
 
+                android.util.Log.d("StreamingManager", "SSE stream ended. Received $eventCount events, cancelled=${currentCall?.isCanceled()}")
+
                 // If we exited the loop without [DONE], handle appropriately
                 if (currentCall?.isCanceled() == true) {
                     onEvent(StreamEvent.Error("Generation cancelled"))
+                } else if (eventCount == 0) {
+                    // No events received - this might be a JSON response instead of SSE
+                    android.util.Log.e("StreamingManager", "No SSE events received - might be JSON response")
+                    onEvent(StreamEvent.Error("No SSE events received"))
                 }
             }
 
@@ -139,42 +163,66 @@ class StreamingManager @Inject constructor(
         }
     }
 
-    private fun handleSseData(
-        json: kotlinx.serialization.json.JsonElement,
+    private fun handleSseEvent(
+        eventType: String,
+        data: String,
         conversationId: String?,
+        messageId: String?,
         onEvent: (StreamEvent) -> Unit,
-        updateConversationId: (String) -> Unit
+        updateIds: (String?, String?) -> Unit
     ) {
-        val jsonObject = json.jsonObject
+        try {
+            val jsonElement = Json.parseToJsonElement(data)
+            val jsonObject = jsonElement.jsonObject
 
-        // Check for conversation creation
-        if (jsonObject.containsKey("conversationId") && jsonObject.containsKey("conversationTitle")) {
-            val convId = jsonObject["conversationId"]?.jsonPrimitive?.content
-            val convTitle = jsonObject["conversationTitle"]?.jsonPrimitive?.content
-            if (convId != null && convTitle != null) {
-                updateConversationId(convId)
-                onEvent(StreamEvent.ConversationCreated(convId, convTitle))
-            }
-        }
+            when (eventType) {
+                "message_start" -> {
+                    // Extract conversation_id and message_id
+                    val convId = jsonObject["conversation_id"]?.jsonPrimitive?.content
+                    val msgId = jsonObject["message_id"]?.jsonPrimitive?.content
+                    android.util.Log.d("StreamingManager", "Message started: conv=$convId, msg=$msgId")
 
-        // Check for different content types
-        when {
-            "token" in jsonObject -> {
-                val token = jsonObject["token"]?.jsonPrimitive?.content ?: ""
-                onEvent(StreamEvent.TokenReceived(token))
+                    // If this is a new conversation (different from request), emit ConversationCreated event
+                    if (convId != null && convId != conversationId) {
+                        android.util.Log.d("StreamingManager", "===== CONVERSATION CREATED =====")
+                        android.util.Log.d("StreamingManager", "New conversationId: $convId")
+                        onEvent(StreamEvent.ConversationCreated(convId, ""))
+                    }
+
+                    updateIds(convId, messageId ?: msgId)
+                }
+                "delta" -> {
+                    // Extract content and reasoning
+                    val content = jsonObject["content"]?.jsonPrimitive?.content ?: ""
+                    val reasoning = jsonObject["reasoning"]?.jsonPrimitive?.content ?: ""
+
+                    when {
+                        content.isNotEmpty() -> {
+                            onEvent(StreamEvent.ContentDelta(content))
+                        }
+                        reasoning.isNotEmpty() -> {
+                            onEvent(StreamEvent.ReasoningDelta(reasoning))
+                        }
+                    }
+                }
+                "message_complete" -> {
+                    android.util.Log.d("StreamingManager", "Message complete: $data")
+                    val tokenCount = jsonObject["token_count"]?.jsonPrimitive?.content?.toIntOrNull()
+                    val costUsd = jsonObject["cost_usd"]?.jsonPrimitive?.content?.toDoubleOrNull()
+                    val responseTimeMs = jsonObject["response_time_ms"]?.jsonPrimitive?.content?.toLongOrNull()
+                    onEvent(StreamEvent.Complete(conversationId, tokenCount, costUsd, responseTimeMs))
+                }
+                "error" -> {
+                    val error = jsonObject["error"]?.jsonPrimitive?.content ?: "Unknown error"
+                    android.util.Log.e("StreamingManager", "Stream error: $error")
+                    onEvent(StreamEvent.Error(error))
+                }
+                else -> {
+                    android.util.Log.d("StreamingManager", "Unknown event type: $eventType")
+                }
             }
-            "content" in jsonObject -> {
-                val content = jsonObject["content"]?.jsonPrimitive?.content ?: ""
-                onEvent(StreamEvent.ContentDelta(content))
-            }
-            "reasoning" in jsonObject -> {
-                val reasoning = jsonObject["reasoning"]?.jsonPrimitive?.content ?: ""
-                onEvent(StreamEvent.ReasoningDelta(reasoning))
-            }
-            "error" in jsonObject -> {
-                val error = jsonObject["error"]?.jsonPrimitive?.content ?: "Unknown error"
-                onEvent(StreamEvent.Error(error))
-            }
+        } catch (e: Exception) {
+            android.util.Log.e("StreamingManager", "Error parsing SSE event: $eventType - $data", e)
         }
     }
 

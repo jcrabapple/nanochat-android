@@ -15,6 +15,7 @@ import com.nanogpt.chat.data.repository.MessageRepository
 import com.nanogpt.chat.data.repository.WebSearchRepository
 import com.nanogpt.chat.data.repository.ConversationTitlePoller
 import com.nanogpt.chat.data.repository.AssistantRepository
+import com.nanogpt.chat.data.repository.VideoGenerationRepository
 import com.nanogpt.chat.data.repository.toEntity
 import com.nanogpt.chat.data.local.SecureStorage
 import com.nanogpt.chat.data.sync.ConversationSyncManager
@@ -33,6 +34,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -41,7 +43,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class ChatViewModel @Inject constructor(
-    savedStateHandle: SavedStateHandle,
+    private val savedStateHandle: SavedStateHandle,
     private val messageRepository: MessageRepository,
     private val conversationRepository: ConversationRepository,
     private val streamingManager: StreamingManager,
@@ -51,7 +53,8 @@ class ChatViewModel @Inject constructor(
     private val api: NanoChatApi,
     private val messageDao: MessageDao,
     private val conversationSyncManager: ConversationSyncManager,
-    private val conversationTitlePoller: ConversationTitlePoller
+    private val conversationTitlePoller: ConversationTitlePoller,
+    private val videoGenerationRepository: VideoGenerationRepository
 ) : ViewModel() {
 
     companion object {
@@ -66,6 +69,15 @@ class ChatViewModel @Inject constructor(
     }
 
     private var conversationId: String? = savedStateHandle["conversationId"]
+        set(value) {
+            val oldValue = field
+            field = value
+            // Update savedStateHandle when conversationId changes
+            if (value != oldValue) {
+                savedStateHandle["conversationId"] = value
+                android.util.Log.d("ChatViewModel", "conversationId updated: $value (was $oldValue)")
+            }
+        }
 
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
@@ -86,6 +98,7 @@ class ChatViewModel @Inject constructor(
     private var currentAssistantMessage: StringBuilder = StringBuilder()
     private var currentReasoning: StringBuilder = StringBuilder()
     private var isGenerating = false
+    private var streamingMessageId: String? = null
     private var titleGenerated = false // Track if title has been generated for this conversation
     
     /** Creates the default fallback models list when API fetch fails */
@@ -127,9 +140,11 @@ class ChatViewModel @Inject constructor(
         }
     }
 
-    private fun loadConversation() {
+    private fun loadConversation(silent: Boolean = false) {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true)
+            if (!silent) {
+                _uiState.value = _uiState.value.copy(isLoading = true)
+            }
             try {
                 val result = conversationRepository.getConversationWithMessages(conversationId!!)
                 result.onSuccess { conversation ->
@@ -163,7 +178,33 @@ class ChatViewModel @Inject constructor(
         viewModelScope.launch {
             messageRepository.getMessagesForConversation(conversationId!!)
                 .collect { messageEntities ->
-                    _messages.value = messageEntities.map { it.toDomain() }
+                    val domainMessages = messageEntities.map { it.toDomain() }
+
+                    _messages.update { currentList ->
+                        // If we are generating, preserve the in-memory streaming message state
+                        // This prevents the DB emission from overwriting our partial stream
+                        // We must read the partial message from currentList inside update{} to ensure atomicity
+                        if (isGenerating && streamingMessageId != null) {
+                            val partialMessage = currentList.find { it.id == streamingMessageId }
+                            if (partialMessage != null) {
+                                val mergedMessages = domainMessages.toMutableList()
+                                val dbIndex = mergedMessages.indexOfFirst { it.id == streamingMessageId }
+
+                                if (dbIndex != -1) {
+                                    // Message exists in DB, override with our partial state
+                                    mergedMessages[dbIndex] = partialMessage
+                                } else {
+                                    // Message not in DB yet, append it
+                                    mergedMessages.add(partialMessage)
+                                }
+                                mergedMessages
+                            } else {
+                                domainMessages
+                            }
+                        } else {
+                            domainMessages
+                        }
+                    }
                 }
         }
     }
@@ -453,14 +494,17 @@ class ChatViewModel @Inject constructor(
             }
 
             // Add placeholder for assistant message
+            val assistantMessageId = java.util.UUID.randomUUID().toString()
+            streamingMessageId = assistantMessageId
+
             val assistantMessage = Message(
-                id = java.util.UUID.randomUUID().toString(),
+                id = assistantMessageId,
                 conversationId = conversationId ?: "",
                 role = "assistant",
                 content = "",
                 createdAt = System.currentTimeMillis()
             )
-            _messages.value = _messages.value + assistantMessage
+            _messages.update { it + assistantMessage }
 
             val webSearchMode = _uiState.value.webSearchMode.name.lowercase()
             val webSearchProvider = if (_uiState.value.webSearchMode != WebSearchMode.OFF) {
@@ -487,50 +531,133 @@ class ChatViewModel @Inject constructor(
                 documents = documents
             )
 
-            // Call generate-message API
-            val response = api.generateMessage(request)
-            if (!response.isSuccessful || response.body() == null) {
-                throw Exception("Failed to generate message: HTTP ${response.code()}")
-            }
+            android.util.Log.d("ChatViewModel", "===== SEND MESSAGE =====")
+            android.util.Log.d("ChatViewModel", "Local conversationId: $conversationId")
+            android.util.Log.d("ChatViewModel", "Request conversation_id: ${request.conversation_id}")
+            android.util.Log.d("ChatViewModel", "Message: ${message.take(50)}...")
 
-            val generateResponse = response.body()!!
-            if (!generateResponse.ok) {
-                throw Exception("Failed to generate message")
-            }
+            // Try SSE streaming first with timeout, fall back to polling if it fails
+            android.util.Log.d("ChatViewModel", "Attempting SSE streaming...")
 
-            val newConversationId = generateResponse.conversation_id
+            val streamSuccess = try {
+                var streamCompleted = false
 
-            // Update the conversationId for new conversations
-            if (conversationId == null) {
-                conversationId = newConversationId
-                titleGenerated = false // Reset title generation flag for new conversation
-            }
+                streamingManager.streamMessage(request) { event ->
+                    android.util.Log.d("ChatViewModel", "SSE event received: $event")
 
-            // Save the conversation ID
-            secureStorage.saveLastConversationId(newConversationId)
+                    when (event) {
+                        is StreamingManager.StreamEvent.ConversationCreated -> {
+                            android.util.Log.d("ChatViewModel", "===== SSE CONVERSATION CREATED =====")
+                            android.util.Log.d("ChatViewModel", "Event conversationId: ${event.conversationId}")
+                            android.util.Log.d("ChatViewModel", "Local conversationId: $conversationId")
+                            conversationId = event.conversationId
+                            secureStorage.saveLastConversationId(event.conversationId)
 
-            // For new conversations, fetch and save conversation details to database
-            try {
-                val convResponse = api.getConversation(newConversationId)
-                if (convResponse.isSuccessful && convResponse.body() != null) {
-                    val conversationDto = convResponse.body()!!
-                    val conversationEntity = conversationDto.toEntity()
+                            // Fetch and save conversation details to database BEFORE notifying listeners
+                            viewModelScope.launch {
+                                try {
+                                    android.util.Log.d("ChatViewModel", "Fetching conversation details from backend...")
+                                    val convResponse = api.getConversation(event.conversationId)
+                                    if (convResponse.isSuccessful && convResponse.body() != null) {
+                                        val conversationDto = convResponse.body()!!
+                                        val conversationEntity = conversationDto.toEntity()
 
-                    // Save conversation to database
-                    conversationRepository.insertConversation(conversationEntity)
+                                        android.util.Log.d("ChatViewModel", "Inserting conversation to database: ${conversationEntity.id}, title: ${conversationEntity.title}")
+                                        conversationRepository.insertConversation(conversationEntity)
+                                        android.util.Log.d("ChatViewModel", "Conversation inserted to database")
 
-                    // Notify listeners that a new conversation was created
-                    conversationSyncManager.notifyConversationCreated(newConversationId)
+                                        // Update UI state
+                                        _uiState.value = _uiState.value.copy(conversation = conversationEntity)
 
-                    // Update UI state with the new conversation
-                    _uiState.value = _uiState.value.copy(conversation = conversationEntity)
+                                        // Notify AFTER database insert so conversation is visible in sidebar
+                                        android.util.Log.d("ChatViewModel", "Notifying conversation created: ${event.conversationId}")
+                                        conversationSyncManager.notifyConversationCreated(event.conversationId)
+                                        android.util.Log.d("ChatViewModel", "Notification complete")
+                                    }
+                                } catch (e: Exception) {
+                                    android.util.Log.e("ChatViewModel", "Failed to save new conversation to DB: ${e.message}", e)
+                                }
+                            }
+
+                            // Update title for UI
+                            _messages.value = _messages.value.map { msg ->
+                                if (msg.role == "assistant" && msg.content.isEmpty()) {
+                                    msg.copy(conversationId = event.conversationId)
+                                } else {
+                                    msg
+                                }
+                            }
+                        }
+                        is StreamingManager.StreamEvent.ContentDelta -> {
+                            currentAssistantMessage.append(event.content)
+                            updateAssistantMessage(currentAssistantMessage.toString())
+                            streamCompleted = false
+                        }
+                        is StreamingManager.StreamEvent.ReasoningDelta -> {
+                            currentReasoning.append(event.reasoning)
+                            updateAssistantMessage(
+                                currentAssistantMessage.toString(),
+                                currentReasoning.toString()
+                            )
+                            streamCompleted = false
+                        }
+                        is StreamingManager.StreamEvent.TokenReceived -> {
+                            currentAssistantMessage.append(event.token)
+                            updateAssistantMessage(currentAssistantMessage.toString())
+                            streamCompleted = false
+                        }
+                        is StreamingManager.StreamEvent.Complete -> {
+                            android.util.Log.d("ChatViewModel", "SSE stream complete: ${event.messageId}, tokens=${event.tokenCount}, cost=$${event.costUsd}, time=${event.responseTimeMs}ms")
+                            streamCompleted = true
+
+                            // Update the last assistant message with metrics
+                            _messages.value = _messages.value.map { msg ->
+                                if (msg.role == "assistant" && msg.id == _messages.value.lastOrNull { it.role == "assistant" }?.id) {
+                                    msg.copy(
+                                        tokenCount = event.tokenCount,
+                                        costUsd = event.costUsd,
+                                        responseTimeMs = event.responseTimeMs
+                                    )
+                                } else {
+                                    msg
+                                }
+                            }
+
+                            // Fetch final message state from server and complete generation
+                            val finalConvId = event.messageId ?: conversationId
+                            if (finalConvId != null) {
+                                viewModelScope.launch {
+                                    fetchAndSaveMessages(finalConvId)
+                                    finishGeneration(finalConvId)
+                                }
+                            } else {
+                                isGenerating = false
+                                _uiState.value = _uiState.value.copy(isGenerating = false)
+                            }
+                        }
+                        is StreamingManager.StreamEvent.Error -> {
+                            android.util.Log.e("ChatViewModel", "SSE stream error: ${event.error}")
+                            _uiState.value = _uiState.value.copy(
+                                error = "Error: ${event.error}",
+                                isGenerating = false
+                            )
+                            isGenerating = false
+                            streamCompleted = true
+                        }
+                    }
                 }
+
+                streamCompleted
             } catch (e: Exception) {
-                android.util.Log.e("ChatViewModel", "Failed to save new conversation to DB: ${e.message}")
+                android.util.Log.e("ChatViewModel", "SSE streaming failed, falling back to polling: ${e.message}", e)
+                false
             }
 
-            // Start polling for messages with much longer timeout
-            pollForMessages(newConversationId)
+            if (!streamSuccess) {
+                // Fallback to polling approach
+                android.util.Log.d("ChatViewModel", "Using polling fallback")
+                usePollingApproach(request)
+            }
 
             // Clear file attachments after successful send
             clearFileAttachments()
@@ -697,20 +824,18 @@ class ChatViewModel @Inject constructor(
         when (event) {
             is StreamingManager.StreamEvent.ContentDelta -> {
                 currentAssistantMessage.append(event.content)
-                updateLastAssistantMessage(
-                    content = currentAssistantMessage.toString()
-                )
+                updateAssistantMessage(currentAssistantMessage.toString())
             }
             is StreamingManager.StreamEvent.ReasoningDelta -> {
                 currentReasoning.append(event.reasoning)
-                updateLastAssistantMessage(
+                updateAssistantMessage(
                     content = currentAssistantMessage.toString(),
                     reasoning = currentReasoning.toString()
                 )
             }
             is StreamingManager.StreamEvent.TokenReceived -> {
                 currentAssistantMessage.append(event.token)
-                updateLastAssistantMessage(currentAssistantMessage.toString())
+                updateAssistantMessage(currentAssistantMessage.toString())
             }
             is StreamingManager.StreamEvent.ConversationCreated -> {
                 // Update conversation info if created
@@ -752,21 +877,178 @@ class ChatViewModel @Inject constructor(
         }
     }
 
-    private fun updateLastAssistantMessage(content: String, reasoning: String = "") {
-        _messages.value = _messages.value.toMutableList().apply {
-            if (isNotEmpty() && last().role == "assistant") {
-                set(lastIndex, last().copy(
-                    content = content,
-                    reasoning = reasoning
-                ))
+    fun stopGeneration() {
+        streamingManager.stopStreaming()
+        isGenerating = false
+        _uiState.value = _uiState.value.copy(
+            isGenerating = false,
+            isGeneratingVideo = false,
+            videoGenerationStatus = null
+        )
+    }
+
+    /**
+     * Updates the assistant message in the UI with new content
+     */
+    private fun updateAssistantMessage(content: String, reasoning: String? = null) {
+        val targetId = streamingMessageId ?: return
+        _messages.update { currentList ->
+            currentList.map { msg ->
+                if (msg.id == targetId) {
+                    msg.copy(
+                        content = content,
+                        reasoning = reasoning ?: msg.reasoning
+                    )
+                } else {
+                    msg
+                }
             }
         }
     }
 
-    fun stopGeneration() {
-        streamingManager.stopStreaming()
+    /**
+     * Fetches messages from API and saves them to database
+     */
+    private suspend fun fetchAndSaveMessages(convId: String) {
+        try {
+            val messagesResponse = api.getMessages(convId)
+            if (messagesResponse.isSuccessful && messagesResponse.body() != null) {
+                val messages = messagesResponse.body()!!
+
+                // Get current video URLs to filter out redundant text messages
+                val existingVideoUrls = _messages.value
+                    .flatMap { it.videos ?: emptyList() }
+                    .toSet()
+
+                // Filter out redundant assistant messages
+                val filteredMessages = if (existingVideoUrls.isNotEmpty()) {
+                    messages.filterNot { msg ->
+                        msg.role == "assistant" &&
+                        existingVideoUrls.any { url ->
+                            msg.content.contains(url) ||
+                            msg.content.contains(url.substringAfterLast("/"))
+                        }
+                    }
+                } else {
+                    messages
+                }
+
+                // Get current pending messages for this conversation to prevent duplicates
+                // This happens because we insert a local PENDING message when user sends,
+                // and then fetch the same message from backend with a different ID.
+                withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    val pendingMessages = messageDao.getPendingMessages()
+                        .filter { it.conversationId == convId }
+
+                    // Find IDs to delete and map local IDs
+                    val idsToDelete = mutableListOf<String>()
+                    val localIdMap = mutableMapOf<String, String>() // backendId -> localId
+
+                    pendingMessages.forEach { pending ->
+                        val match = filteredMessages.find { backendMsg ->
+                            backendMsg.role == pending.role &&
+                                    backendMsg.content == pending.content
+                        }
+                        if (match != null) {
+                            android.util.Log.d("ChatViewModel", "Marking pending message ${pending.id} for deletion")
+                            idsToDelete.add(pending.id)
+                            // Preserve the local ID (pending.id) for the new backend message
+                            localIdMap[match.id] = pending.localId ?: pending.id
+                        }
+                    }
+
+                    val messageEntities = filteredMessages.map { it.toEntity(convId, localIdMap[it.id]) }
+
+                    // Perform atomic replace
+                    messageDao.replaceMessages(idsToDelete, messageEntities)
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("ChatViewModel", "Failed to fetch and save messages: ${e.message}")
+        }
+    }
+
+    /**
+     * Marks generation as complete and handles post-generation tasks
+     */
+    private suspend fun finishGeneration(convId: String?) {
         isGenerating = false
         _uiState.value = _uiState.value.copy(isGenerating = false)
+
+        // Trigger title generation for new conversations
+        if (convId != null && !titleGenerated) {
+            conversationTitlePoller.startPolling(convId)
+            titleGenerated = true
+
+            // Reload conversation after a delay to get the updated title
+            kotlinx.coroutines.delay(3000)
+            loadConversation(silent = true)
+        }
+    }
+
+    /**
+     * Legacy polling approach as fallback when SSE streaming fails
+     */
+    private suspend fun usePollingApproach(request: GenerateMessageRequest) {
+        // Call generate-message API
+        android.util.Log.d("ChatViewModel", "===== POLLING APPROACH =====")
+        android.util.Log.d("ChatViewModel", "Request conversation_id: ${request.conversation_id}")
+        android.util.Log.d("ChatViewModel", "Local conversationId: $conversationId")
+
+        val response = api.generateMessage(request)
+        if (!response.isSuccessful || response.body() == null) {
+            throw Exception("Failed to generate message: HTTP ${response.code()}")
+        }
+
+        val generateResponse = response.body()!!
+        if (!generateResponse.ok) {
+            throw Exception("Failed to generate message")
+        }
+
+        val newConversationId = generateResponse.conversation_id
+        android.util.Log.d("ChatViewModel", "Response conversation_id: $newConversationId")
+
+        // Update the conversationId for new conversations
+        if (conversationId == null) {
+            conversationId = newConversationId
+            titleGenerated = false
+            android.util.Log.d("ChatViewModel", "New conversation! Set local conversationId to: $newConversationId")
+        } else {
+            android.util.Log.d("ChatViewModel", "Existing conversation! local=$conversationId, response=$newConversationId")
+            if (conversationId != newConversationId) {
+                android.util.Log.e("ChatViewModel", "WARNING: Backend returned different conversationId!")
+                android.util.Log.e("ChatViewModel", "This means the backend created a NEW conversation instead of using the existing one")
+            }
+        }
+
+        // Save the conversation ID
+        secureStorage.saveLastConversationId(newConversationId)
+
+        // For new conversations, fetch and save conversation details to database
+        try {
+            val convResponse = api.getConversation(newConversationId)
+            if (convResponse.isSuccessful && convResponse.body() != null) {
+                val conversationDto = convResponse.body()!!
+                val conversationEntity = conversationDto.toEntity()
+
+                android.util.Log.d("ChatViewModel", "Inserting conversation to database: ${conversationEntity.id}, title: ${conversationEntity.title}")
+                conversationRepository.insertConversation(conversationEntity)
+                android.util.Log.d("ChatViewModel", "Conversation inserted to database")
+
+                // Update UI state
+                _uiState.value = _uiState.value.copy(conversation = conversationEntity)
+
+                // Notify AFTER database insert so conversation is visible in sidebar
+                android.util.Log.d("ChatViewModel", "Notifying conversation created: $newConversationId")
+                conversationSyncManager.notifyConversationCreated(newConversationId)
+                android.util.Log.d("ChatViewModel", "Notification complete")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("ChatViewModel", "Failed to save new conversation to DB: ${e.message}", e)
+        }
+
+        // Start polling for messages
+        pollForMessages(newConversationId)
     }
 
     fun logMessageInteraction(messageId: String, action: String) {
@@ -1227,6 +1509,370 @@ class ChatViewModel @Inject constructor(
     }
 
     /**
+     * Generate a video using the selected model.
+     * Video generation uses a separate API from normal message generation.
+     */
+    fun generateVideo(prompt: String) {
+        if (_inputText.value.isBlank() || isGenerating) return
+
+        android.util.Log.d("ChatViewModel", "===== GENERATE VIDEO START =====")
+        android.util.Log.d("ChatViewModel", "Prompt: $prompt")
+
+        viewModelScope.launch {
+            // Clear input text immediately
+            _inputText.value = ""
+
+            android.util.Log.d("ChatViewModel", "Setting isGeneratingVideo = true")
+            _uiState.value = _uiState.value.copy(isGeneratingVideo = true, error = null)
+
+            val model = _uiState.value.selectedModel?.id ?: DEFAULT_MODEL_ID
+            val currentConversationId = conversationId
+
+            // Step 1: Add user message to UI immediately
+            val userMessage = Message(
+                id = java.util.UUID.randomUUID().toString(),
+                conversationId = currentConversationId ?: "",
+                role = "user",
+                content = prompt,
+                createdAt = System.currentTimeMillis()
+            )
+            _messages.value = _messages.value + userMessage
+
+            // Step 1.5: Add placeholder assistant message for loading indicator
+            val placeholderMessage = Message(
+                id = java.util.UUID.randomUUID().toString(),
+                conversationId = currentConversationId ?: "",
+                role = "assistant",
+                content = "",
+                modelId = model,
+                createdAt = System.currentTimeMillis()
+            )
+            _messages.value = _messages.value + placeholderMessage
+            android.util.Log.d("ChatViewModel", "Added placeholder message: ${placeholderMessage.id}, total messages: ${_messages.value.size}")
+            android.util.Log.d("ChatViewModel", "Last assistant message: ${_messages.value.lastOrNull { it.role == "assistant" }?.id}")
+
+            // Step 2: Create conversation on backend if it's a new chat
+            val actualConversationId = if (currentConversationId == null) {
+                try {
+                    android.util.Log.d("ChatViewModel", "Creating new conversation for video generation")
+
+                    // Create conversation by calling generateMessage with temporary flag
+                    // We'll replace the assistant response later with our video
+                    val request = GenerateMessageRequest(
+                        conversation_id = null,
+                        message = prompt,
+                        model_id = model,
+                        assistant_id = _uiState.value.selectedAssistant?.id,
+                        project_id = _uiState.value.conversation?.projectId,
+                        web_search_mode = _uiState.value.webSearchMode.name.lowercase(),
+                        web_search_provider = _uiState.value.webSearchProvider?.name?.lowercase()
+                    )
+
+                    val response = api.generateMessage(request)
+                    if (!response.isSuccessful || response.body() == null) {
+                        throw Exception("Failed to create conversation: HTTP ${response.code()}")
+                    }
+
+                    val generateResponse = response.body()!!
+                    if (!generateResponse.ok) {
+                        throw Exception("Failed to create conversation")
+                    }
+
+                    val newConversationId = generateResponse.conversation_id
+                    conversationId = newConversationId
+                    secureStorage.saveLastConversationId(newConversationId)
+
+                    // Fetch conversation details from backend
+                    val convResponse = api.getConversation(newConversationId)
+                    if (convResponse.isSuccessful && convResponse.body() != null) {
+                        val conversationDto = convResponse.body()!!
+                        val conversationEntity = conversationDto.toEntity()
+
+                        android.util.Log.d("ChatViewModel", "Inserting conversation to database: ${conversationEntity.id}, title: ${conversationEntity.title}")
+                        conversationRepository.insertConversation(conversationEntity)
+                        android.util.Log.d("ChatViewModel", "Conversation inserted to database")
+
+                        // Update UI state
+                        _uiState.value = _uiState.value.copy(conversation = conversationEntity)
+
+                        // Notify AFTER database insert so conversation is visible in sidebar
+                        android.util.Log.d("ChatViewModel", "Notifying conversation created: $newConversationId")
+                        conversationSyncManager.notifyConversationCreated(newConversationId)
+                        android.util.Log.d("ChatViewModel", "Notification complete")
+                    }
+
+                    // Fetch messages from backend to get the real message IDs
+                    // This will get the user message + any backend assistant response
+                    android.util.Log.d("ChatViewModel", "About to call pollForMessagesBackend")
+                    pollForMessagesBackend(newConversationId, preserveMessageId = placeholderMessage.id)
+                    android.util.Log.d("ChatViewModel", "pollForMessagesBackend complete, isGeneratingVideo still true: ${_uiState.value.isGeneratingVideo}")
+                    android.util.Log.d("ChatViewModel", "Total messages after pollForMessagesBackend: ${_messages.value.size}")
+                    android.util.Log.d("ChatViewModel", "Last assistant message after poll: ${_messages.value.lastOrNull { it.role == "assistant" }?.id}")
+
+                    // Remove backend's assistant message (it will be replaced with our video message)
+                    val backendAssistantMessages = _messages.value.filter { it.role == "assistant" && it.id != placeholderMessage.id }
+                    android.util.Log.d("ChatViewModel", "Found ${backendAssistantMessages.size} backend assistant messages")
+                    if (backendAssistantMessages.isNotEmpty()) {
+                        backendAssistantMessages.forEach { msg ->
+                            android.util.Log.d("ChatViewModel", "Removing backend assistant message: ${msg.id}, content: ${msg.content}")
+                            _messages.value = _messages.value.filter { it.id != msg.id }
+                            try {
+                                messageDao.deleteMessageById(msg.id)
+                            } catch (e: Exception) {
+                                android.util.Log.e("ChatViewModel", "Failed to delete backend assistant message: ${e.message}")
+                            }
+                        }
+                    }
+                    android.util.Log.d("ChatViewModel", "Total messages after removing backend messages: ${_messages.value.size}")
+                    android.util.Log.d("ChatViewModel", "Last assistant message after removal: ${_messages.value.lastOrNull { it.role == "assistant" }?.id}")
+
+                    // Update placeholder message's conversation ID
+                    _messages.value = _messages.value.map {
+                        if (it.id == placeholderMessage.id) {
+                            it.copy(conversationId = newConversationId)
+                        } else {
+                            it
+                        }
+                    }
+
+                    // Start polling for auto-generated conversation title
+                    if (!titleGenerated) {
+                        conversationTitlePoller.startPolling(newConversationId)
+                        titleGenerated = true
+
+                        // Reload conversation after a delay to get the updated title
+                        kotlinx.coroutines.delay(3000)
+                        loadConversation()
+                    }
+
+                    newConversationId
+                } catch (e: Exception) {
+                    android.util.Log.e("ChatViewModel", "Failed to create conversation: ${e.message}")
+                    _uiState.value = _uiState.value.copy(
+                        isGeneratingVideo = false,
+                        error = "Failed to create conversation: ${e.message}"
+                    )
+                    return@launch
+                }
+            } else {
+                currentConversationId
+            }
+
+            // Step 3: Start video generation
+            try {
+                android.util.Log.d("ChatViewModel", "About to call videoGenerationRepository.generateVideo")
+                val result = videoGenerationRepository.generateVideo(model, prompt)
+
+                result.fold(
+                    onSuccess = { runId ->
+                        android.util.Log.d("ChatViewModel", "Video generation started: $runId, isGeneratingVideo: ${_uiState.value.isGeneratingVideo}")
+                        pollVideoStatus(runId, model, prompt, actualConversationId ?: "", placeholderMessage.id)
+                    },
+                    onFailure = { error ->
+                        _uiState.value = _uiState.value.copy(
+                            isGeneratingVideo = false,
+                            error = "Failed to generate video: ${error.message}"
+                        )
+                    }
+                )
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isGeneratingVideo = false,
+                    error = "Video generation error: ${e.message}"
+                )
+            }
+        }
+    }
+
+    /**
+     * Fetch messages from backend and update UI (similar to pollForMessages but without polling loop)
+     * @param preserveMessageId If provided, this message ID will be preserved in the messages list
+     */
+    private suspend fun pollForMessagesBackend(convId: String, preserveMessageId: String? = null) {
+        try {
+            val messagesResponse = api.getMessages(convId)
+            if (messagesResponse.isSuccessful && messagesResponse.body() != null) {
+                val messages = messagesResponse.body()!!
+
+                // Get current video URLs to filter out redundant text messages
+                val existingVideoUrls = _messages.value
+                    .flatMap { it.videos ?: emptyList() }
+                    .toSet()
+
+                // Filter out redundant assistant messages
+                val filteredMessages = if (existingVideoUrls.isNotEmpty()) {
+                    messages.filterNot { msg ->
+                        msg.role == "assistant" &&
+                        existingVideoUrls.any { url ->
+                            msg.content.contains(url) ||
+                            msg.content.contains(url.substringAfterLast("/"))
+                        }
+                    }
+                } else {
+                    messages
+                }
+
+                // Save to database
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    val newMessageEntities = mutableListOf<MessageEntity>()
+                    for (messageDto in filteredMessages) {
+                        newMessageEntities.add(messageDto.toEntity(convId))
+                    }
+                    if (newMessageEntities.isNotEmpty()) {
+                        messageDao.insertMessages(newMessageEntities)
+                    }
+                }
+
+                // Update UI, preserving the specified message if provided
+                if (preserveMessageId != null) {
+                    val preservedMessage = _messages.value.find { it.id == preserveMessageId }
+                    if (preservedMessage != null) {
+                        val backendMessages = filteredMessages.map { it.toDomain() }
+                        val backendMessageIds = backendMessages.map { it.id }.toSet()
+
+                        // Keep backend messages that don't conflict with preserved message, or merge them
+                        _messages.value = backendMessages + _messages.value.filter { it.id == preserveMessageId }
+                    } else {
+                        _messages.value = filteredMessages.map { it.toDomain() }
+                    }
+                } else {
+                    _messages.value = filteredMessages.map { it.toDomain() }
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("ChatViewModel", "Failed to fetch messages: ${e.message}")
+        }
+    }
+
+    /**
+     * Poll video generation status until completion or failure.
+     */
+    private suspend fun pollVideoStatus(
+        runId: String,
+        model: String,
+        prompt: String,
+        conversationId: String,
+        placeholderMessageId: String
+    ) {
+        videoGenerationRepository.pollVideoStatus(runId, model).collect { result ->
+            when (result) {
+                is VideoGenerationRepository.VideoGenerationResult.InQueue -> {
+                    _uiState.value = _uiState.value.copy(
+                        videoGenerationStatus = VideoGenerationStatus.IN_QUEUE
+                    )
+                }
+                is VideoGenerationRepository.VideoGenerationResult.InProgress -> {
+                    _uiState.value = _uiState.value.copy(
+                        videoGenerationStatus = VideoGenerationStatus.IN_PROGRESS
+                    )
+                }
+                is VideoGenerationRepository.VideoGenerationResult.Completed -> {
+                    _uiState.value = _uiState.value.copy(
+                        isGeneratingVideo = false,
+                        videoGenerationStatus = VideoGenerationStatus.COMPLETED
+                    )
+
+                    // Remove redundant text messages containing the video URL
+                    // The backend sometimes sends a text message with the video URL, which is redundant
+                    // since we are displaying the video via the placeholder message
+                    val videoUrl = result.videoUrl
+                    val videoFilename = videoUrl.substringAfterLast("/")
+                    
+                    val redundantMessages = _messages.value.filter {
+                        it.role == "assistant" &&
+                        it.id != placeholderMessageId &&
+                        (it.content.contains(videoUrl) ||
+                         it.content.contains(videoFilename) ||
+                         (it.content.contains("video", ignoreCase = true) && it.content.length < 100))
+                    }
+
+                    redundantMessages.forEach { msg ->
+                        android.util.Log.d("ChatViewModel", "Removing redundant video message: ${msg.id}")
+                        try {
+                            messageDao.deleteMessageById(msg.id)
+                        } catch (e: Exception) {
+                            android.util.Log.e("ChatViewModel", "Failed to delete redundant message: ${e.message}")
+                        }
+                    }
+
+                    // Update local list to remove them immediately
+                    if (redundantMessages.isNotEmpty()) {
+                        _messages.value = _messages.value.filter { it.id !in redundantMessages.map { m -> m.id } }
+                    }
+
+                    // Create video annotation
+                    val videoAnnotation = Annotation(
+                        type = "video",
+                        data = kotlinx.serialization.json.buildJsonObject {
+                            put("url", kotlinx.serialization.json.JsonPrimitive(result.videoUrl))
+                        }
+                    )
+
+                    // Update placeholder message with video
+                    val updatedMessage = Message(
+                        id = placeholderMessageId,
+                        conversationId = conversationId,
+                        role = "assistant",
+                        content = "",
+                        modelId = model,
+                        annotations = listOf(videoAnnotation),
+                        createdAt = System.currentTimeMillis()
+                    )
+
+                    // Replace placeholder in messages list
+                    _messages.value = _messages.value.map {
+                        if (it.id == placeholderMessageId) updatedMessage else it
+                    }
+
+                    // Save to database
+                    val videoAnnotationJson = kotlinx.serialization.json.buildJsonArray {
+                        add(kotlinx.serialization.json.buildJsonObject {
+                            put("type", kotlinx.serialization.json.JsonPrimitive("video"))
+                            put("data", kotlinx.serialization.json.buildJsonObject {
+                                put("url", kotlinx.serialization.json.JsonPrimitive(result.videoUrl))
+                            })
+                        })
+                    }.toString()
+
+                    val assistantMessageEntity = com.nanogpt.chat.data.local.entity.MessageEntity(
+                        id = placeholderMessageId,
+                        conversationId = conversationId,
+                        role = "assistant",
+                        content = "",
+                        modelId = model,
+                        annotationsJson = videoAnnotationJson,
+                        createdAt = System.currentTimeMillis(),
+                        syncStatus = com.nanogpt.chat.data.local.entity.SyncStatus.SYNCED
+                    )
+
+                    // Check if message already exists in database, if not insert it
+                    val existing = messageDao.getMessageById(placeholderMessageId)
+                    if (existing == null) {
+                        messageDao.insertMessages(listOf(assistantMessageEntity))
+                    } else {
+                        messageDao.updateMessage(assistantMessageEntity)
+                    }
+                }
+                is VideoGenerationRepository.VideoGenerationResult.Failed -> {
+                    _uiState.value = _uiState.value.copy(
+                        isGeneratingVideo = false,
+                        videoGenerationStatus = VideoGenerationStatus.FAILED,
+                        error = "Video generation failed: ${result.error}"
+                    )
+                    // Update placeholder with error message
+                    _messages.value = _messages.value.map {
+                        if (it.id == placeholderMessageId) {
+                            it.copy(content = "Failed to generate video")
+                        } else {
+                            it
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
      * Check if a model is an image generation model based on its capabilities.
      * Returns true if the model has image generation capability, false otherwise.
      */
@@ -1268,6 +1914,46 @@ class ChatViewModel @Inject constructor(
                 lowerId.contains("text-to-image")
     }
 
+    /**
+     * Check if a model is a video generation model based on its capabilities.
+     * Returns true if the model has video generation capability, false otherwise.
+     */
+    fun isVideoGenerationModel(modelId: String?): Boolean {
+        if (modelId == null) return false
+
+        // Check cache first
+        val cachedModel = modelCapabilitiesCache.value[modelId]
+        if (cachedModel != null) {
+            return cachedModel.capabilities.video
+        }
+
+        // Fallback to model ID pattern matching if not in cache
+        val lowerId = modelId.lowercase()
+        return lowerId.contains("sora") ||
+                lowerId.contains("runway") ||
+                lowerId.contains("pika") ||
+                lowerId.contains("kling") ||
+                lowerId.contains("video-gen") ||
+                lowerId.contains("videogen") ||
+                lowerId.contains("text-to-video") ||
+                lowerId.contains("txt2vid") ||
+                lowerId.contains("gen-2") ||
+                lowerId.contains("gen_2") ||
+                lowerId.contains("gen2") ||
+                lowerId.contains("lumalabs") ||
+                lowerId.contains("haiper") ||
+                lowerId.contains("luma") ||
+                lowerId.contains("luma-ai") ||
+                lowerId.contains("heygen") ||
+                lowerId.contains("synthesia") ||
+                lowerId.contains("d-ID") ||
+                lowerId.contains("d-id") ||
+                lowerId.contains("animatediff") ||
+                lowerId.contains("animatediffusion") ||
+                lowerId.contains("stability-ai") && lowerId.contains("video") ||
+                lowerId.contains("ideogram") && lowerId.contains("video")
+    }
+
     override fun onCleared() {
         super.onCleared()
         // Stop all active title polling to prevent memory leaks
@@ -1287,8 +1973,17 @@ data class ChatUiState(
     val availableModels: List<ModelInfo> = emptyList(),
     val selectedAssistant: AssistantEntity? = null,
     val availableAssistants: List<AssistantEntity> = emptyList(),
-    val fileAttachments: List<FileAttachment> = emptyList()
+    val fileAttachments: List<FileAttachment> = emptyList(),
+    val isGeneratingVideo: Boolean = false,
+    val videoGenerationStatus: VideoGenerationStatus? = null
 )
+
+enum class VideoGenerationStatus {
+    IN_QUEUE,
+    IN_PROGRESS,
+    COMPLETED,
+    FAILED
+}
 
 // Domain model for messages
 data class Message(
@@ -1300,9 +1995,13 @@ data class Message(
     val modelId: String? = null,
     val createdAt: Long,
     val tokenCount: Int? = null,
+    val costUsd: Double? = null,
+    val responseTimeMs: Long? = null,
     val annotations: List<Annotation>? = null,
     val images: List<String>? = null,
-    val starred: Boolean? = null
+    val videos: List<String>? = null,
+    val starred: Boolean? = null,
+    val localId: String? = null
 )
 
 data class Annotation(
@@ -1336,6 +2035,16 @@ fun MessageEntity.toDomain(): Message {
         }
     }
 
+    // Extract videos from video annotations
+    val videos = annotations?.filter { it.type == "video" }?.mapNotNull { annotation ->
+        if (annotation.data is kotlinx.serialization.json.JsonObject) {
+            val dataObj = annotation.data as kotlinx.serialization.json.JsonObject
+            dataObj["url"]?.jsonPrimitive?.content
+        } else {
+            null
+        }
+    }
+
     return Message(
         id = id,
         conversationId = conversationId,
@@ -1345,8 +2054,12 @@ fun MessageEntity.toDomain(): Message {
         modelId = modelId,
         createdAt = createdAt,
         tokenCount = tokenCount,
+        costUsd = costUsd,
+        responseTimeMs = responseTimeMs,
         annotations = annotations,
         images = images,
-        starred = starred
+        videos = videos,
+        starred = starred,
+        localId = localId
     )
 }

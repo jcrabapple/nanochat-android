@@ -14,6 +14,8 @@ import com.nanogpt.chat.ui.auth.setup.SetupScreen
 import com.nanogpt.chat.ui.assistants.AssistantsScreen
 import com.nanogpt.chat.ui.chat.ChatScreen
 import com.nanogpt.chat.ui.conversations.ConversationsListScreen
+import com.nanogpt.chat.ui.projects.ProjectFilesScreen
+import com.nanogpt.chat.ui.projects.ProjectMembersScreen
 import com.nanogpt.chat.ui.projects.ProjectsScreen
 import com.nanogpt.chat.ui.settings.SettingsScreen
 import com.nanogpt.chat.ui.theme.ThemeManager
@@ -132,6 +134,36 @@ fun NanoChatNavGraph(
 
         composable(Screen.Projects.route) {
             ProjectsScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                },
+                onNavigateToProjectFiles = { projectId ->
+                    navController.navigate(Screen.ProjectFiles.createRoute(projectId))
+                },
+                onNavigateToProjectMembers = { projectId ->
+                    navController.navigate(Screen.ProjectMembers.createRoute(projectId))
+                }
+            )
+        }
+
+        composable(
+            route = "projectFiles/{projectId}"
+        ) {
+            val projectId = it.arguments?.getString("projectId") ?: ""
+            ProjectFilesScreen(
+                projectId = projectId,
+                onNavigateBack = {
+                    navController.popBackStack()
+                }
+            )
+        }
+
+        composable(
+            route = "projectMembers/{projectId}"
+        ) {
+            val projectId = it.arguments?.getString("projectId") ?: ""
+            ProjectMembersScreen(
+                projectId = projectId,
                 onNavigateBack = {
                     navController.popBackStack()
                 }

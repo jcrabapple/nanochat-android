@@ -7,9 +7,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.lifecycleScope
@@ -57,14 +56,11 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            var isDarkMode by mutableStateOf(themeManager.isDarkMode.value)
+            val isDarkMode by themeManager.isDarkMode.collectAsState()
 
-            // Listen for theme changes and update status bar
-            LaunchedEffect(themeManager.isDarkMode) {
-                themeManager.isDarkMode.collect { isDark ->
-                    isDarkMode = isDark
-                    setStatusBarAppearance(isDark)
-                }
+            // Update status bar when theme changes
+            LaunchedEffect(isDarkMode) {
+                setStatusBarAppearance(isDarkMode)
             }
 
             NanoChatTheme(themeManager) {

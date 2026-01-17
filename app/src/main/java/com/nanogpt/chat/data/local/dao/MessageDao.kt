@@ -9,54 +9,59 @@ import com.nanogpt.chat.data.local.entity.MessageEntity
 import kotlinx.coroutines.flow.Flow
 
 @Dao
-interface MessageDao {
+abstract class MessageDao {
 
     @Query("SELECT * FROM messages WHERE conversationId = :conversationId ORDER BY createdAt ASC")
-    fun getMessagesForConversation(conversationId: String): Flow<List<MessageEntity>>
+    abstract fun getMessagesForConversation(conversationId: String): Flow<List<MessageEntity>>
 
     @Query("SELECT id FROM messages WHERE conversationId = :conversationId")
-    suspend fun getMessageIdsForConversation(conversationId: String): List<String>
+    abstract suspend fun getMessageIdsForConversation(conversationId: String): List<String>
 
     @Query("SELECT * FROM messages WHERE id = :id")
-    suspend fun getMessageById(id: String): MessageEntity?
+    abstract suspend fun getMessageById(id: String): MessageEntity?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertMessage(message: MessageEntity)
-
+    abstract suspend fun insertMessage(message: MessageEntity)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertMessages(messages: List<MessageEntity>)
+    abstract suspend fun insertMessages(messages: List<MessageEntity>)
 
     @Update
-    suspend fun updateMessage(message: MessageEntity)
+    abstract suspend fun updateMessage(message: MessageEntity)
 
     @Query("UPDATE messages SET content = :content WHERE id = :id")
-    suspend fun updateMessageContent(id: String, content: String)
+    abstract suspend fun updateMessageContent(id: String, content: String)
 
     @Query("UPDATE messages SET starred = :starred WHERE id = :id")
-    suspend fun updateMessageStarred(id: String, starred: Boolean)
+    abstract suspend fun updateMessageStarred(id: String, starred: Boolean)
 
     @Query("DELETE FROM messages WHERE id = :id")
-    suspend fun deleteMessageById(id: String)
+    abstract suspend fun deleteMessageById(id: String)
 
     @Query("DELETE FROM messages WHERE conversationId = :conversationId")
-    suspend fun deleteMessagesForConversation(conversationId: String)
+    abstract suspend fun deleteMessagesForConversation(conversationId: String)
 
     @Query("DELETE FROM messages WHERE conversationId = :conversationId AND id NOT IN (:ids)")
-    suspend fun deleteMessagesNotIn(conversationId: String, ids: List<String>)
+    abstract suspend fun deleteMessagesNotIn(conversationId: String, ids: List<String>)
 
     @Query("DELETE FROM messages WHERE conversationId = :conversationId AND id NOT IN (:messageIds)")
-    suspend fun deleteMessagesNotInList(conversationId: String, messageIds: List<String>)
+    abstract suspend fun deleteMessagesNotInList(conversationId: String, messageIds: List<String>)
 
     @Query("DELETE FROM messages WHERE conversationId = :conversationId AND id NOT IN (:messageIds)")
-    suspend fun deleteMessagesNotInConversation(
+    abstract suspend fun deleteMessagesNotInConversation(
         conversationId: String,
         messageIds: List<String>
     )
 
     @Query("SELECT * FROM messages WHERE syncStatus = 'PENDING'")
-    suspend fun getPendingMessages(): List<MessageEntity>
+    abstract suspend fun getPendingMessages(): List<MessageEntity>
 
     @Query("SELECT COUNT(*) FROM messages WHERE conversationId = :conversationId")
-    suspend fun getMessageCount(conversationId: String): Int
+    abstract suspend fun getMessageCount(conversationId: String): Int
+
+    @androidx.room.Transaction
+    open suspend fun replaceMessages(idsToDelete: List<String>, newMessages: List<MessageEntity>) {
+        idsToDelete.forEach { deleteMessageById(it) }
+        insertMessages(newMessages)
+    }
 }

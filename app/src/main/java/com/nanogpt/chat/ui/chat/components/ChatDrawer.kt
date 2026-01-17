@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
@@ -47,6 +48,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -81,6 +83,7 @@ fun ChatDrawer(
     onProjectsClick: () -> Unit,
     onThemeToggleClick: () -> Unit,
     isDarkMode: Boolean,
+    isDrawerOpen: Boolean = false,
     modifier: Modifier = Modifier,
     viewModel: ConversationsListViewModel = hiltViewModel()
 ) {
@@ -89,6 +92,13 @@ fun ChatDrawer(
     var selectedProjectFilter by remember { mutableStateOf<String?>(null) }
     var showMoveToProjectDialog by remember { mutableStateOf(false) }
     var conversationToMove by remember { mutableStateOf<ConversationEntity?>(null) }
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(isDrawerOpen) {
+        if (isDrawerOpen && uiState.conversations.isNotEmpty()) {
+            listState.scrollToItem(0)
+        }
+    }
 
     ModalDrawerSheet(
         modifier = modifier.width(300.dp)
@@ -206,6 +216,7 @@ fun ChatDrawer(
                 }
 
                 LazyColumn(
+                    state = listState,
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {

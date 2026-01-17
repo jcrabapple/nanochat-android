@@ -207,7 +207,7 @@ val MacchiatoDarkColorScheme: ColorScheme = darkColorScheme(
     primary = MacchiatoMauve,
     onPrimary = MacchiatoBase,
     primaryContainer = Color(0xFFA888C9),
-    onPrimaryContainer = MacchiatoBase,
+    onPrimaryContainer = Color.White,
 
     secondary = MacchiatoLavender,
     onSecondary = MacchiatoBase,
@@ -244,7 +244,7 @@ val MochaDarkColorScheme: ColorScheme = darkColorScheme(
     primary = MochaMauve,
     onPrimary = MochaBase,
     primaryContainer = Color(0xFFA28BC9),
-    onPrimaryContainer = MochaBase,
+    onPrimaryContainer = Color.White,
 
     secondary = MochaLavender,
     onSecondary = MochaBase,

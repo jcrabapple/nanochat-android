@@ -8,5 +8,11 @@ sealed class Screen(val route: String) {
     }
     object Assistants : Screen("assistants")
     object Projects : Screen("projects")
+    object ProjectFiles : Screen("projectFiles") {
+        fun createRoute(projectId: String) = "projectFiles/$projectId"
+    }
+    object ProjectMembers : Screen("projectMembers") {
+        fun createRoute(projectId: String) = "projectMembers/$projectId"
+    }
     object Settings : Screen("settings")
 }

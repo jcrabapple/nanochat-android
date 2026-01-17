@@ -92,6 +92,8 @@ import com.nanogpt.chat.ui.chat.components.WebSearchConfigDialog
 import com.nanogpt.chat.ui.chat.components.WebSearchMode
 import com.nanogpt.chat.ui.chat.components.WebSearchProvider
 import com.nanogpt.chat.ui.chat.components.ImageViewer
+import com.nanogpt.chat.ui.chat.components.InlineVideoPlayer
+import com.nanogpt.chat.ui.chat.components.VideoViewer
 import com.nanogpt.chat.util.copyToClipboard
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -118,6 +120,7 @@ fun ChatScreen(
     var showWebSearchConfig by remember { mutableStateOf(false) }
     var showAssistantSheet by remember { mutableStateOf(false) }
     var fullScreenImageUrl by remember { mutableStateOf<String?>(null) }
+    var showVideoViewer by remember { mutableStateOf<String?>(null) }
 
     // File picker launcher
     val filePickerLauncher = rememberLauncherForActivityResult(
@@ -158,12 +161,14 @@ fun ChatScreen(
 
     // Determine if current model is text generation (not image generation)
     val isTextGenerationModel = !viewModel.isImageGenerationModel(uiState.selectedModel?.id)
+    val isVideoGenerationModel = viewModel.isVideoGenerationModel(uiState.selectedModel?.id)
 
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
             ChatDrawer(
                 currentConversationId = conversationId,
+                isDrawerOpen = drawerState.isOpen,
                 onConversationClick = { convId ->
                     coroutineScope.launch {
                         drawerState.close()
@@ -350,9 +355,16 @@ fun ChatScreen(
                     ChatInputBar(
                         text = inputText,
                         onTextChange = viewModel::updateInputText,
-                        onSend = { viewModel.sendMessage() },
+                        onSend = {
+                            // Route to video generation or message generation based on model type
+                            if (isVideoGenerationModel) {
+                                viewModel.generateVideo(viewModel.inputText.value)
+                            } else {
+                                viewModel.sendMessage()
+                            }
+                        },
                         onStop = { viewModel.stopGeneration() },
-                        isGenerating = uiState.isGenerating,
+                        isGenerating = uiState.isGenerating || uiState.isGeneratingVideo,
                         onAttachmentClick = if (isTextGenerationModel) {
                             { filePickerLauncher.launch("*/*") }
                         } else {
@@ -402,7 +414,7 @@ fun ChatScreen(
                 ) {
                     items(
                         items = messages,
-                        key = { it.id }
+                        key = { it.localId ?: it.id }
                     ) { message ->
                         val isLastAssistantMessage = message.role == "assistant" &&
                             message.id == messages.lastOrNull { it.role == "assistant" }?.id
@@ -410,10 +422,13 @@ fun ChatScreen(
                         MessageBubble(
                             message = message,
                             backendUrl = viewModel.backendUrl,
-                            isGenerating = uiState.isGenerating && isLastAssistantMessage,
+                            isGenerating = (uiState.isGenerating || uiState.isGeneratingVideo) && isLastAssistantMessage,
                             isImageGenerationModel = viewModel.isImageGenerationModel(message.modelId),
+                            isVideoGenerationModel = viewModel.isVideoGenerationModel(message.modelId),
                             onImageClick = { imageUrl -> fullScreenImageUrl = imageUrl },
                             onImageDownload = { imageUrl -> downloadImage(context, imageUrl) },
+                            onVideoClick = { videoUrl -> showVideoViewer = videoUrl },
+                            onVideoDownload = { videoUrl -> coroutineScope.launch { downloadVideo(context, videoUrl) } },
                             onCopy = {
                                 context.copyToClipboard(message.content, "Message")
                                 Toast.makeText(
@@ -511,6 +526,15 @@ fun ChatScreen(
         ImageViewer(
             imageUrl = fullScreenImageUrl!!,
             onDismiss = { fullScreenImageUrl = null }
+        )
+    }
+
+    // Full-screen video viewer
+    if (showVideoViewer != null) {
+        VideoViewer(
+            videoUrl = showVideoViewer!!,
+            onDismiss = { showVideoViewer = null },
+            onDownload = { videoUrl -> coroutineScope.launch { downloadVideo(context, videoUrl) } }
         )
     }
     }
@@ -688,26 +712,36 @@ private fun downloadImage(context: Context, imageUrl: String) {
                         val contentValues = android.content.ContentValues().apply {
                             put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, fileName)
                             put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/png")
-                            put(android.provider.MediaStore.Images.Media.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS)
-                            put(android.provider.MediaStore.Images.Media.IS_PENDING, 1)
+                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                                put(android.provider.MediaStore.Images.Media.RELATIVE_PATH, android.os.Environment.DIRECTORY_PICTURES)
+                                put(android.provider.MediaStore.Images.Media.IS_PENDING, 1)
+                            }
                         }
 
-                        val uri = resolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+                        val collection = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                            android.provider.MediaStore.Images.Media.getContentUri(android.provider.MediaStore.VOLUME_EXTERNAL_PRIMARY)
+                        } else {
+                            android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+                        }
+
+                        val uri = resolver.insert(collection, contentValues)
 
                         if (uri != null) {
                             resolver.openOutputStream(uri)?.use { out ->
                                 bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out)
                             }
 
-                            contentValues.clear()
-                            contentValues.put(android.provider.MediaStore.Images.Media.IS_PENDING, 0)
-                            resolver.update(uri, contentValues, null, null)
+                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                                contentValues.clear()
+                                contentValues.put(android.provider.MediaStore.Images.Media.IS_PENDING, 0)
+                                resolver.update(uri, contentValues, null, null)
+                            }
 
                             // Show success on main thread
                             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                                 android.widget.Toast.makeText(
                                     context,
-                                    "Image saved to Downloads",
+                                    "Image saved to Pictures",
                                     android.widget.Toast.LENGTH_SHORT
                                 ).show()
                             }
@@ -738,6 +772,84 @@ private fun downloadImage(context: Context, imageUrl: String) {
         .build()
 
     imageLoader.enqueue(request)
+}
+
+private suspend fun downloadVideo(context: Context, videoUrl: String) {
+    try {
+        android.util.Log.d("ChatScreen", "Downloading video from: $videoUrl")
+
+        val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            // Use OkHttp to download the video
+            val client = okhttp3.OkHttpClient.Builder()
+                .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                .readTimeout(300, java.util.concurrent.TimeUnit.SECONDS)
+                .writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                .build()
+
+            val request = okhttp3.Request.Builder()
+                .url(videoUrl)
+                .build()
+
+            val response = client.newCall(request).execute()
+
+            if (!response.isSuccessful) {
+                throw Exception("HTTP ${response.code}")
+            }
+
+            val inputStream = response.body?.byteStream() ?: throw Exception("Empty response body")
+
+            // Use MediaStore to save to Movies directory (works on Android 10+ without permissions)
+            val resolver = context.contentResolver
+            val fileName = "nanochat_video_${System.currentTimeMillis()}.mp4"
+
+            val contentValues = android.content.ContentValues().apply {
+                put(android.provider.MediaStore.Video.Media.DISPLAY_NAME, fileName)
+                put(android.provider.MediaStore.Video.Media.MIME_TYPE, "video/mp4")
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                    put(android.provider.MediaStore.Video.Media.RELATIVE_PATH, android.os.Environment.DIRECTORY_MOVIES + "/Nanochat")
+                    put(android.provider.MediaStore.Video.Media.IS_PENDING, 1)
+                }
+            }
+
+            val collection = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                android.provider.MediaStore.Video.Media.getContentUri(android.provider.MediaStore.VOLUME_EXTERNAL_PRIMARY)
+            } else {
+                android.provider.MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+            }
+
+            val uri = resolver.insert(collection, contentValues)
+
+            if (uri != null) {
+                resolver.openOutputStream(uri)?.use { out ->
+                    inputStream.copyTo(out)
+                }
+
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                    contentValues.clear()
+                    contentValues.put(android.provider.MediaStore.Video.Media.IS_PENDING, 0)
+                    resolver.update(uri, contentValues, null, null)
+                }
+
+                "Success"
+            } else {
+                throw Exception("Failed to create MediaStore entry")
+            }
+        }
+
+        // Show success toast on main thread
+        android.widget.Toast.makeText(
+            context,
+            "Video saved to Movies/Nanochat",
+            android.widget.Toast.LENGTH_SHORT
+        ).show()
+    } catch (e: Exception) {
+        android.util.Log.e("ChatScreen", "Failed to download video: ${e.message}", e)
+        android.widget.Toast.makeText(
+            context,
+            "Failed to save video: ${e.message}",
+            android.widget.Toast.LENGTH_LONG
+        ).show()
+    }
 }
 
 /**

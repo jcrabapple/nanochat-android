@@ -17,7 +17,8 @@ data class GenerateMessageRequest(
     val documents: List<MessageDocumentDto>? = null,
     val reasoning_effort: String? = null,  // "low" | "medium" | "high"
     val temporary: Boolean? = null,
-    val provider_id: String? = null
+    val provider_id: String? = null,
+    val stream: Boolean? = true  // Request SSE streaming
 )
 
 @Serializable

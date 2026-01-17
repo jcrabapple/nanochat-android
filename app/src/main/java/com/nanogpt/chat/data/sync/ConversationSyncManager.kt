@@ -26,7 +26,10 @@ class ConversationSyncManager @Inject constructor() {
      * Triggers ConversationsListViewModel to refresh from API.
      */
     suspend fun notifyConversationCreated(conversationId: String) {
+        android.util.Log.d("ConversationSyncManager", "===== NOTIFY CONVERSATION CREATED =====")
+        android.util.Log.d("ConversationSyncManager", "Emitting Created event for: $conversationId")
         _conversationUpdates.emit(ConversationUpdate.Created(conversationId))
+        android.util.Log.d("ConversationSyncManager", "Event emitted successfully")
     }
 
     /**

@@ -22,6 +22,8 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Group
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -59,7 +61,8 @@ import kotlinx.coroutines.launch
 fun ProjectsScreen(
     viewModel: ProjectsViewModel = hiltViewModel(),
     onNavigateBack: () -> Unit,
-    onProjectSelected: (String) -> Unit = {}
+    onNavigateToProjectFiles: (String) -> Unit = {},
+    onNavigateToProjectMembers: (String) -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val coroutineScope = rememberCoroutineScope()
@@ -99,8 +102,9 @@ fun ProjectsScreen(
             ) { project ->
                 ProjectItem(
                     project = project,
-                    onClick = { onProjectSelected(project.id) },
+                    onClick = { onNavigateToProjectFiles(project.id) },
                     onEdit = { editingProject = project },
+                    onMembers = { onNavigateToProjectMembers(project.id) },
                     onDelete = {
                         projectToDelete = project
                         coroutineScope.launch {
@@ -154,6 +158,7 @@ fun ProjectItem(
     project: ProjectEntity,
     onClick: () -> Unit,
     onEdit: () -> Unit,
+    onMembers: () -> Unit,
     onDelete: () -> Unit
 ) {
     Card(
@@ -165,7 +170,6 @@ fun ProjectItem(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable(onClick = onClick)
                 .padding(16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
@@ -208,6 +212,12 @@ fun ProjectItem(
             }
 
             // Actions
+            IconButton(onClick = onClick) {
+                Icon(Icons.Default.FolderOpen, contentDescription = "Files")
+            }
+            IconButton(onClick = onMembers) {
+                Icon(Icons.Default.Group, contentDescription = "Members")
+            }
             IconButton(onClick = onEdit) {
                 Icon(Icons.Default.Edit, contentDescription = "Edit")
             }

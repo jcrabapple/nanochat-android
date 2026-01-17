@@ -32,7 +32,14 @@ class ConversationRepository @Inject constructor(
             val response = api.getConversations()
             if (response.isSuccessful && response.body() != null) {
                 val dtos = response.body()!!
+                android.util.Log.d("ConversationRepository", "Fetched ${dtos.size} conversations from API")
+
+                // Get all local conversations before sync
+                val localConversations = conversationDao.getAllConversations().first()
+                val localConversationIds = localConversations.map { it.id }.toSet()
+
                 val entities = dtos.map { it.toEntity() }
+                val remoteConversationIds = entities.map { it.id }.toSet()
 
                 // Intelligent merge: insert or update based on updatedAt timestamp
                 // This preserves local state and avoids the "delete all" approach
@@ -43,6 +50,16 @@ class ConversationRepository @Inject constructor(
                         conversationDao.insertConversation(entity)
                     }
                     // If local version is newer, keep it (it might have local-only changes)
+                }
+
+                // Delete local conversations that don't exist on backend
+                val conversationsToDelete = localConversationIds - remoteConversationIds
+                if (conversationsToDelete.isNotEmpty()) {
+                    android.util.Log.d("ConversationRepository", "Deleting ${conversationsToDelete.size} conversations that don't exist on backend")
+                    conversationsToDelete.forEach { conversationId ->
+                        android.util.Log.d("ConversationRepository", "Deleting conversation: $conversationId")
+                        conversationDao.deleteConversationById(conversationId)
+                    }
                 }
 
                 Result.success(entities)
@@ -80,6 +97,13 @@ class ConversationRepository @Inject constructor(
 
                     android.util.Log.d("ConversationRepository", "Fetched ${messageDtos.size} messages from API for conversation $id")
 
+                    // Check if we have local messages with video annotations that should be preserved
+                    val localMessages = messageDao.getMessagesForConversation(id).first()
+                    val localVideoMessages = localMessages.filter { message ->
+                        message.annotationsJson != null && message.annotationsJson.contains("\"type\"")
+                            && message.annotationsJson.contains("\"video\"")
+                    }
+
                     // Upsert messages to avoid full table rewrites
                     val messageEntities = messageDtos.map { messageDto ->
                         messageDto.toEntity(conversationEntity.id)
@@ -89,6 +113,12 @@ class ConversationRepository @Inject constructor(
                         android.util.Log.d("ConversationRepository", "Upserted ${messageEntities.size} messages into database for conversation $id")
                     } else {
                         android.util.Log.w("ConversationRepository", "No messages to upsert for conversation $id")
+                    }
+
+                    // Re-insert local video messages if they were overwritten
+                    if (localVideoMessages.isNotEmpty()) {
+                        android.util.Log.d("ConversationRepository", "Preserving ${localVideoMessages.size} local video messages")
+                        messageDao.insertMessages(localVideoMessages)
                     }
                 } else {
                     android.util.Log.e("ConversationRepository", "Failed to fetch messages for conversation $id: ${messagesResponse.code()}")
@@ -217,7 +247,10 @@ class ConversationRepository @Inject constructor(
     }
 
     suspend fun insertConversation(conversation: ConversationEntity) {
+        android.util.Log.d("ConversationRepository", "===== INSERT CONVERSATION =====")
+        android.util.Log.d("ConversationRepository", "Inserting conversation: ${conversation.id}, title: ${conversation.title}")
         conversationDao.insertConversation(conversation)
+        android.util.Log.d("ConversationRepository", "Insert complete")
     }
 
     suspend fun getConversationCountForProject(projectId: String): Int {

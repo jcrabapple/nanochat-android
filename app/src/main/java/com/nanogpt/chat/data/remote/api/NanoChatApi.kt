@@ -80,6 +80,38 @@ interface NanoChatApi {
     @DELETE("/api/projects/{id}")
     suspend fun deleteProject(@Path("id") id: String): Response<Unit>
 
+    @GET("/api/projects/{id}/files")
+    suspend fun getProjectFiles(@Path("id") projectId: String): Response<List<ProjectFileDto>>
+
+    @POST("/api/projects/{id}/files")
+    suspend fun uploadProjectFile(
+        @Path("id") projectId: String,
+        @Body body: okhttp3.MultipartBody,
+        @Header("Origin") origin: String
+    ): Response<CreateProjectFileResponse>
+
+    @DELETE("/api/projects/{id}/files")
+    suspend fun deleteProjectFile(
+        @Path("id") projectId: String,
+        @Query("fileId") fileId: String
+    ): Response<DeleteProjectFileResponse>
+
+    // ============== Project Members ==============
+    @GET("/api/projects/{id}/members")
+    suspend fun getProjectMembers(@Path("id") projectId: String): Response<List<ProjectMemberDto>>
+
+    @POST("/api/projects/{id}/members")
+    suspend fun addProjectMember(
+        @Path("id") projectId: String,
+        @Body request: AddProjectMemberRequest
+    ): Response<AddProjectMemberResponse>
+
+    @DELETE("/api/projects/{id}/members")
+    suspend fun removeProjectMember(
+        @Path("id") projectId: String,
+        @Query("userId") userId: String
+    ): Response<RemoveProjectMemberResponse>
+
     // ============== Settings ==============
     @GET("/api/db/user-settings")
     suspend fun getUserSettings(): Response<UserSettingsDto>
@@ -145,4 +177,14 @@ interface NanoChatApi {
         @Header("Content-Type") contentType: String,
         @Header("x-filename") fileName: String
     ): Response<FileUploadResponse>
+
+    // ============== Video Generation ==============
+    @POST("/api/video/generate")
+    suspend fun generateVideo(@Body request: VideoGenerationRequest): Response<VideoGenerationResponse>
+
+    @GET("/api/video/status")
+    suspend fun getVideoStatus(
+        @Query("runId") runId: String,
+        @Query("model") model: String
+    ): Response<VideoStatusResponse>
 }

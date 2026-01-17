@@ -16,9 +16,11 @@ data class MessageDto(
     val annotations: List<AnnotationDto>? = null,
     val followUpSuggestions: List<String>? = null,
     val images: List<ImageDto>? = null,
+    val videos: List<VideoDto>? = null,
     val createdAt: String,
     val tokenCount: Int? = null,
     val costUsd: Double? = null,
+    val responseTimeMs: Long? = null,
     val starred: Boolean? = null
 )
 
@@ -27,6 +29,15 @@ data class ImageDto(
     val url: String,
     val storage_id: String? = null,
     val fileName: String? = null
+)
+
+@Serializable
+data class VideoDto(
+    val url: String,
+    val storage_id: String? = null,
+    val fileName: String? = null,
+    val durationMs: Long? = null,
+    val thumbnailUrl: String? = null
 )
 
 @Serializable
@@ -48,8 +59,11 @@ fun MessageDto.toDomain(): Message {
             .parse(createdAt)
             .time,
         tokenCount = tokenCount,
+        costUsd = costUsd,
+        responseTimeMs = responseTimeMs,
         annotations = annotations?.map { Annotation(it.type, it.data) },
         images = images?.map { it.url },
+        videos = videos?.map { it.url },
         starred = starred
     )
 }
