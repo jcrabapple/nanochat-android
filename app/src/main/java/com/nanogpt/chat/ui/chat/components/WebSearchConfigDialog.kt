@@ -3,6 +3,8 @@ package com.nanogpt.chat.ui.chat.components
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -59,7 +61,9 @@ fun WebSearchConfigDialog(
         title = { Text("Web Search Settings") },
         text = {
             Column(
-                modifier = modifier.padding(vertical = 8.dp)
+                modifier = modifier
+                    .padding(vertical = 8.dp)
+                    .verticalScroll(rememberScrollState())
             ) {
                 // Mode Selection
                 Text(

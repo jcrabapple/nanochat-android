@@ -1,6 +1,8 @@
 package com.nanogpt.chat.ui.chat.components
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -75,7 +77,9 @@ fun ModelSelector(
             onDismissRequest = onDismiss,
             title = { Text("Select Model") },
             text = {
-                Column {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState())
+                ) {
                     models.forEach { model ->
                         DropdownMenuItem(
                             text = {
