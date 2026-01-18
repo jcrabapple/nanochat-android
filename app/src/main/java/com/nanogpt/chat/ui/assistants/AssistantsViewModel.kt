@@ -89,7 +89,11 @@ class AssistantsViewModel @Inject constructor(
         webSearchMode: String?,
         temperature: Double?,
         topP: Double?,
-        reasoningEffort: String?
+        reasoningEffort: String?,
+        webSearchExaDepth: String?,
+        webSearchContextSize: String?,
+        webSearchKagiSource: String?,
+        webSearchValyuSearchType: String?
     ) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
@@ -104,7 +108,11 @@ class AssistantsViewModel @Inject constructor(
                 temperature = temperature,
                 topP = topP,
                 reasoningEffort = reasoningEffort,
-                webSearchMode = webSearchMode
+                webSearchMode = webSearchMode,
+                webSearchExaDepth = webSearchExaDepth,
+                webSearchContextSize = webSearchContextSize,
+                webSearchKagiSource = webSearchKagiSource,
+                webSearchValyuSearchType = webSearchValyuSearchType
             )
 
             result.onSuccess {
@@ -129,7 +137,11 @@ class AssistantsViewModel @Inject constructor(
         webSearchMode: String?,
         temperature: Double?,
         topP: Double?,
-        reasoningEffort: String?
+        reasoningEffort: String?,
+        webSearchExaDepth: String?,
+        webSearchContextSize: String?,
+        webSearchKagiSource: String?,
+        webSearchValyuSearchType: String?
     ) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
@@ -145,7 +157,11 @@ class AssistantsViewModel @Inject constructor(
                 temperature = temperature,
                 topP = topP,
                 reasoningEffort = reasoningEffort,
-                webSearchMode = webSearchMode
+                webSearchMode = webSearchMode,
+                webSearchExaDepth = webSearchExaDepth,
+                webSearchContextSize = webSearchContextSize,
+                webSearchKagiSource = webSearchKagiSource,
+                webSearchValyuSearchType = webSearchValyuSearchType
             )
 
             result.onSuccess {

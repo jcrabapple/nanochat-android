@@ -35,7 +35,34 @@ enum class WebSearchProvider(val displayName: String, val value: String) {
     LINKUP("Linkup", "linkup"),
     TAVILY("Tavily", "tavily"),
     EXA("Exa", "exa"),
-    KAGI("Kagi", "kagi")
+    KAGI("Kagi", "kagi"),
+    PERPLEXITY("Perplexity", "perplexity"),
+    VALYU("Valyu", "valyu")
+}
+
+// Provider-specific options
+enum class WebSearchExaDepth(val displayName: String, val value: String) {
+    FAST("Fast", "fast"),
+    AUTO("Auto", "auto"),
+    NEURAL("Neural", "neural"),
+    DEEP("Deep", "deep")
+}
+
+enum class WebSearchContextSize(val displayName: String, val value: String) {
+    LOW("Low", "low"),
+    MEDIUM("Medium", "medium"),
+    HIGH("High", "high")
+}
+
+enum class WebSearchKagiSource(val displayName: String, val value: String) {
+    WEB("Web", "web"),
+    NEWS("News", "news"),
+    SEARCH("Search", "search")
+}
+
+enum class WebSearchValyuSearchType(val displayName: String, val value: String) {
+    ALL("All", "all"),
+    WEB("Web", "web")
 }
 
 // Helper function to get color for each mode

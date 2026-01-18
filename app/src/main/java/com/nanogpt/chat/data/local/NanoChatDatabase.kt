@@ -164,6 +164,32 @@ val MIGRATION_7_8 = object : Migration(7, 8) {
     }
 }
 
+val MIGRATION_8_9 = object : Migration(8, 9) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        // Add provider-specific web search options to assistants table
+        database.execSQL(
+            """
+            ALTER TABLE assistants ADD COLUMN webSearchExaDepth TEXT DEFAULT NULL
+            """
+        )
+        database.execSQL(
+            """
+            ALTER TABLE assistants ADD COLUMN webSearchContextSize TEXT DEFAULT NULL
+            """
+        )
+        database.execSQL(
+            """
+            ALTER TABLE assistants ADD COLUMN webSearchKagiSource TEXT DEFAULT NULL
+            """
+        )
+        database.execSQL(
+            """
+            ALTER TABLE assistants ADD COLUMN webSearchValyuSearchType TEXT DEFAULT NULL
+            """
+        )
+    }
+}
+
 @Database(
     entities = [
         ConversationEntity::class,
@@ -173,7 +199,7 @@ val MIGRATION_7_8 = object : Migration(7, 8) {
         ProjectFileEntity::class,
         ProjectMemberEntity::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = true
 )
 abstract class NanoChatDatabase : RoomDatabase() {

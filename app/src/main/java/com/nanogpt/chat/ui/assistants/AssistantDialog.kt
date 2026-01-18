@@ -71,8 +71,8 @@ val ASSISTANT_ICONS = listOf(
 @Composable
 fun AssistantDialog(
     assistant: AssistantEntity? = null,
-    onCreate: (String, String, String, String?, Boolean, String?, String?, Double?, Double?, String) -> Unit,
-    onUpdate: (String, String, String, String?, Boolean, String?, String?, Double?, Double?, String) -> Unit,
+    onCreate: (String, String, String, String?, Boolean, String?, String?, Double?, Double?, String, String?, String?, String?, String?) -> Unit,
+    onUpdate: (String, String, String, String?, Boolean, String?, String?, Double?, Double?, String, String?, String?, String?, String?) -> Unit,
     onDismiss: () -> Unit,
     availableModels: List<Pair<String, String>> = emptyList() // List of (modelId, modelName)
 ) {
@@ -85,6 +85,10 @@ fun AssistantDialog(
     var webSearchEnabled by remember { mutableStateOf(assistant?.webSearchEnabled ?: false) }
     var webSearchProvider by remember { mutableStateOf(assistant?.webSearchProvider ?: "") }
     var webSearchMode by remember { mutableStateOf(assistant?.webSearchMode ?: "standard") }
+    var webSearchExaDepth by remember { mutableStateOf(assistant?.webSearchExaDepth ?: "auto") }
+    var webSearchContextSize by remember { mutableStateOf(assistant?.webSearchContextSize ?: "medium") }
+    var webSearchKagiSource by remember { mutableStateOf(assistant?.webSearchKagiSource ?: "web") }
+    var webSearchValyuSearchType by remember { mutableStateOf(assistant?.webSearchValyuSearchType ?: "all") }
 
     var temperature by remember { mutableStateOf(assistant?.temperature?.toFloat() ?: 0.7f) }
     var topP by remember { mutableStateOf(assistant?.topP?.toFloat() ?: 1.0f) }
@@ -94,12 +98,42 @@ fun AssistantDialog(
     var showProviderDropdown by remember { mutableStateOf(false) }
     var showSearchModeDropdown by remember { mutableStateOf(false) }
     var showReasoningDropdown by remember { mutableStateOf(false) }
+    var showExaDepthDropdown by remember { mutableStateOf(false) }
+    var showContextSizeDropdown by remember { mutableStateOf(false) }
+    var showKagiSourceDropdown by remember { mutableStateOf(false) }
+    var showValyuSearchTypeDropdown by remember { mutableStateOf(false) }
 
     val providers = listOf(
         "linkup" to "Linkup",
         "tavily" to "Tavily",
         "exa" to "Exa",
-        "kagi" to "Kagi"
+        "kagi" to "Kagi",
+        "perplexity" to "Perplexity",
+        "valyu" to "Valyu"
+    )
+
+    val exaDepthOptions = listOf(
+        "fast" to "Fast",
+        "auto" to "Auto",
+        "neural" to "Neural",
+        "deep" to "Deep"
+    )
+
+    val contextSizeOptions = listOf(
+        "low" to "Low",
+        "medium" to "Medium",
+        "high" to "High"
+    )
+
+    val kagiSourceOptions = listOf(
+        "web" to "Web",
+        "news" to "News",
+        "search" to "Search"
+    )
+
+    val valyuSearchTypeOptions = listOf(
+        "all" to "All",
+        "web" to "Web"
     )
 
     val searchModes = listOf(
@@ -440,6 +474,177 @@ fun AssistantDialog(
                         }
                     }
 
+                    // Provider-specific options
+                    if (webSearchEnabled) {
+                        // Exa Depth (for Exa provider)
+                        if (webSearchProvider == "exa") {
+                            Column {
+                                Text(
+                                    text = "Exa Search Depth",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Box {
+                                    val depthDisplay = exaDepthOptions.find { it.first == webSearchExaDepth }?.second
+                                        ?: "Auto"
+                                    OutlinedTextField(
+                                        value = depthDisplay,
+                                        onValueChange = { },
+                                        label = { Text("Select Depth") },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        readOnly = true
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .matchParentSize()
+                                            .clickable { showExaDepthDropdown = true }
+                                    )
+                                    DropdownMenu(
+                                        expanded = showExaDepthDropdown,
+                                        onDismissRequest = { showExaDepthDropdown = false }
+                                    ) {
+                                        exaDepthOptions.forEach { (key, value) ->
+                                            DropdownMenuItem(
+                                                text = { Text(value) },
+                                                onClick = {
+                                                    webSearchExaDepth = key
+                                                    showExaDepthDropdown = false
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Context Size (for most providers)
+                        if (webSearchProvider in listOf("linkup", "tavily", "perplexity", "valyu")) {
+                            Column {
+                                Text(
+                                    text = "Context Size",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Box {
+                                    val contextDisplay = contextSizeOptions.find { it.first == webSearchContextSize }?.second
+                                        ?: "Medium"
+                                    OutlinedTextField(
+                                        value = contextDisplay,
+                                        onValueChange = { },
+                                        label = { Text("Select Context Size") },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        readOnly = true
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .matchParentSize()
+                                            .clickable { showContextSizeDropdown = true }
+                                    )
+                                    DropdownMenu(
+                                        expanded = showContextSizeDropdown,
+                                        onDismissRequest = { showContextSizeDropdown = false }
+                                    ) {
+                                        contextSizeOptions.forEach { (key, value) ->
+                                            DropdownMenuItem(
+                                                text = { Text(value) },
+                                                onClick = {
+                                                    webSearchContextSize = key
+                                                    showContextSizeDropdown = false
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Kagi Source (for Kagi provider)
+                        if (webSearchProvider == "kagi") {
+                            Column {
+                                Text(
+                                    text = "Kagi Source",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Box {
+                                    val sourceDisplay = kagiSourceOptions.find { it.first == webSearchKagiSource }?.second
+                                        ?: "Web"
+                                    OutlinedTextField(
+                                        value = sourceDisplay,
+                                        onValueChange = { },
+                                        label = { Text("Select Source") },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        readOnly = true
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .matchParentSize()
+                                            .clickable { showKagiSourceDropdown = true }
+                                    )
+                                    DropdownMenu(
+                                        expanded = showKagiSourceDropdown,
+                                        onDismissRequest = { showKagiSourceDropdown = false }
+                                    ) {
+                                        kagiSourceOptions.forEach { (key, value) ->
+                                            DropdownMenuItem(
+                                                text = { Text(value) },
+                                                onClick = {
+                                                    webSearchKagiSource = key
+                                                    showKagiSourceDropdown = false
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Valyu Search Type (for Valyu provider)
+                        if (webSearchProvider == "valyu") {
+                            Column {
+                                Text(
+                                    text = "Valyu Search Type",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Box {
+                                    val typeDisplay = valyuSearchTypeOptions.find { it.first == webSearchValyuSearchType }?.second
+                                        ?: "All"
+                                    OutlinedTextField(
+                                        value = typeDisplay,
+                                        onValueChange = { },
+                                        label = { Text("Select Type") },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        readOnly = true
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .matchParentSize()
+                                            .clickable { showValyuSearchTypeDropdown = true }
+                                    )
+                                    DropdownMenu(
+                                        expanded = showValyuSearchTypeDropdown,
+                                        onDismissRequest = { showValyuSearchTypeDropdown = false }
+                                    ) {
+                                        valyuSearchTypeOptions.forEach { (key, value) ->
+                                            DropdownMenuItem(
+                                                text = { Text(value) },
+                                                onClick = {
+                                                    webSearchValyuSearchType = key
+                                                    showValyuSearchTypeDropdown = false
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(16.dp))
 
                     // Actions
@@ -467,7 +672,11 @@ fun AssistantDialog(
                                         webSearchMode,
                                         tempDouble,
                                         topPDouble,
-                                        reasoningEffort
+                                        reasoningEffort,
+                                        webSearchExaDepth,
+                                        webSearchContextSize,
+                                        webSearchKagiSource,
+                                        webSearchValyuSearchType
                                     )
                                 } else {
                                     onUpdate(
@@ -480,7 +689,11 @@ fun AssistantDialog(
                                         webSearchMode,
                                         tempDouble,
                                         topPDouble,
-                                        reasoningEffort
+                                        reasoningEffort,
+                                        webSearchExaDepth,
+                                        webSearchContextSize,
+                                        webSearchKagiSource,
+                                        webSearchValyuSearchType
                                     )
                                 }
                             },

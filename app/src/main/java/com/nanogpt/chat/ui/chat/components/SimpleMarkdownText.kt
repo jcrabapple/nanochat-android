@@ -262,14 +262,24 @@ private fun HeadingBlock(
         else -> 18.sp to FontWeight.Bold
     }
 
-    Text(
-        text = text,
+    val annotatedString = buildAnnotatedString {
+        appendInlineMarkdown(
+            text = text,
+            surfaceVariantColor = MaterialTheme.colorScheme.surfaceVariant,
+            tertiaryContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
+            onSurfaceColor = color
+        )
+    }
+
+    ClickableText(
+        text = annotatedString,
         modifier = modifier.padding(vertical = 4.dp),
         style = MaterialTheme.typography.titleLarge.copy(
             fontSize = fontSize,
             fontWeight = fontWeight,
             color = color
-        )
+        ),
+        onClick = {}
     )
 }
 
@@ -312,12 +322,22 @@ private fun MarkdownTable(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     headers.forEach { header ->
-                        Column(modifier = Modifier.width(200.dp)) {
-                            Text(
+                        val annotatedHeader = buildAnnotatedString {
+                            appendInlineMarkdown(
                                 text = header,
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = textColor
+                                surfaceVariantColor = MaterialTheme.colorScheme.surfaceVariant,
+                                tertiaryContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                                onSurfaceColor = textColor
+                            )
+                        }
+                        Column(modifier = Modifier.width(200.dp)) {
+                            ClickableText(
+                                text = annotatedHeader,
+                                style = MaterialTheme.typography.titleSmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    color = textColor
+                                ),
+                                onClick = {}
                             )
                         }
                     }
@@ -330,11 +350,21 @@ private fun MarkdownTable(
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         row.forEach { cell ->
-                            Column(modifier = Modifier.width(200.dp)) {
-                                Text(
+                            val annotatedCell = buildAnnotatedString {
+                                appendInlineMarkdown(
                                     text = cell,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = textColor
+                                    surfaceVariantColor = MaterialTheme.colorScheme.surfaceVariant,
+                                    tertiaryContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                                    onSurfaceColor = textColor
+                                )
+                            }
+                            Column(modifier = Modifier.width(200.dp)) {
+                                ClickableText(
+                                    text = annotatedCell,
+                                    style = MaterialTheme.typography.bodySmall.copy(
+                                        color = textColor
+                                    ),
+                                    onClick = {}
                                 )
                             }
                         }
@@ -367,6 +397,15 @@ private fun BlockQuoteBlock(
     val borderColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
     val bgColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
 
+    val annotatedString = buildAnnotatedString {
+        appendInlineMarkdown(
+            text = text,
+            surfaceVariantColor = MaterialTheme.colorScheme.surfaceVariant,
+            tertiaryContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
+            onSurfaceColor = textColor
+        )
+    }
+
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -377,12 +416,13 @@ private fun BlockQuoteBlock(
             }
             .padding(8.dp)
     ) {
-        Text(
-            text = text,
+        ClickableText(
+            text = annotatedString,
             style = MaterialTheme.typography.bodyLarge.copy(
-                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                color = textColor
             ),
-            color = textColor
+            onClick = {}
         )
     }
 }
@@ -397,6 +437,15 @@ private fun CheckboxBlock(
     modifier: Modifier = Modifier,
     textColor: Color = MaterialTheme.colorScheme.onSurface
 ) {
+    val annotatedString = buildAnnotatedString {
+        appendInlineMarkdown(
+            text = text,
+            surfaceVariantColor = MaterialTheme.colorScheme.surfaceVariant,
+            tertiaryContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
+            onSurfaceColor = textColor
+        )
+    }
+
     Row(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -421,10 +470,13 @@ private fun CheckboxBlock(
                 }
             }
         }
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodyLarge,
-            color = textColor
+        ClickableText(
+            text = annotatedString,
+            style = MaterialTheme.typography.bodyLarge.copy(
+                color = textColor
+            ),
+            onClick = {},
+            modifier = Modifier.weight(1f)
         )
     }
 }
@@ -572,7 +624,11 @@ private fun parseMarkdownBlocks(markdown: String): List<MarkdownBlock> {
             // Heading 3+
             trimmedLine.startsWith("###") -> {
                 val level = trimmedLine.takeWhile { it == '#' }.length
-                val text = trimmedLine.substring(level + 1).trim()
+                val text = if (trimmedLine.length > level) {
+                    trimmedLine.substring(level + 1).trim()
+                } else {
+                    ""
+                }
                 blocks.add(MarkdownBlock.Heading(text, minOf(level, 3)))
             }
             // Horizontal rule

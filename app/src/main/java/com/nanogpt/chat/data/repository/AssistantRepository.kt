@@ -38,7 +38,11 @@ class AssistantRepository @Inject constructor(
         temperature: Double? = null,
         topP: Double? = null,
         reasoningEffort: String? = null,
-        webSearchMode: String? = null
+        webSearchMode: String? = null,
+        webSearchExaDepth: String? = null,
+        webSearchContextSize: String? = null,
+        webSearchKagiSource: String? = null,
+        webSearchValyuSearchType: String? = null
     ): Result<AssistantEntity> {
         return try {
             // Create locally first
@@ -57,6 +61,10 @@ class AssistantRepository @Inject constructor(
                 contextSize = null,
                 reasoningEffort = reasoningEffort,
                 webSearchMode = webSearchMode,
+                webSearchExaDepth = webSearchExaDepth,
+                webSearchContextSize = webSearchContextSize,
+                webSearchKagiSource = webSearchKagiSource,
+                webSearchValyuSearchType = webSearchValyuSearchType,
                 createdAt = System.currentTimeMillis(),
                 updatedAt = System.currentTimeMillis(),
                 syncStatus = SyncStatus.PENDING
@@ -81,6 +89,10 @@ class AssistantRepository @Inject constructor(
                         defaultModelId = modelId,  // Map: modelId -> defaultModelId
                         defaultWebSearchMode = defaultWebSearchMode,  // Map: webSearchEnabled + webSearchMode -> defaultWebSearchMode
                         defaultWebSearchProvider = webSearchProvider,  // Map: webSearchProvider -> defaultWebSearchProvider
+                        defaultWebSearchExaDepth = webSearchExaDepth,
+                        defaultWebSearchContextSize = webSearchContextSize,
+                        defaultWebSearchKagiSource = webSearchKagiSource,
+                        defaultWebSearchValyuSearchType = webSearchValyuSearchType,
                         icon = null,
                         temperature = temperature,
                         topP = topP,
@@ -120,7 +132,11 @@ class AssistantRepository @Inject constructor(
         temperature: Double? = null,
         topP: Double? = null,
         reasoningEffort: String? = null,
-        webSearchMode: String? = null
+        webSearchMode: String? = null,
+        webSearchExaDepth: String? = null,
+        webSearchContextSize: String? = null,
+        webSearchKagiSource: String? = null,
+        webSearchValyuSearchType: String? = null
     ): Result<Unit> {
         return try {
             val existing = assistantDao.getAssistantById(id)
@@ -136,6 +152,10 @@ class AssistantRepository @Inject constructor(
                     topP = topP,
                     reasoningEffort = reasoningEffort,
                     webSearchMode = webSearchMode,
+                    webSearchExaDepth = webSearchExaDepth,
+                    webSearchContextSize = webSearchContextSize,
+                    webSearchKagiSource = webSearchKagiSource,
+                    webSearchValyuSearchType = webSearchValyuSearchType,
                     updatedAt = System.currentTimeMillis(),
                     syncStatus = SyncStatus.PENDING
                 )
@@ -157,6 +177,10 @@ class AssistantRepository @Inject constructor(
                             defaultModelId = modelId,
                             defaultWebSearchMode = defaultWebSearchMode,
                             defaultWebSearchProvider = updated.webSearchProvider,
+                            defaultWebSearchExaDepth = updated.webSearchExaDepth,
+                            defaultWebSearchContextSize = updated.webSearchContextSize,
+                            defaultWebSearchKagiSource = updated.webSearchKagiSource,
+                            defaultWebSearchValyuSearchType = updated.webSearchValyuSearchType,
                             temperature = temperature,
                             topP = topP,
                             reasoningEffort = reasoningEffort
@@ -248,6 +272,10 @@ class AssistantRepository @Inject constructor(
                             defaultModelId = assistant.modelId,
                             defaultWebSearchMode = defaultWebSearchMode,
                             defaultWebSearchProvider = assistant.webSearchProvider,
+                            defaultWebSearchExaDepth = assistant.webSearchExaDepth,
+                            defaultWebSearchContextSize = assistant.webSearchContextSize,
+                            defaultWebSearchKagiSource = assistant.webSearchKagiSource,
+                            defaultWebSearchValyuSearchType = assistant.webSearchValyuSearchType,
                             temperature = assistant.temperature,
                             topP = assistant.topP,
                             reasoningEffort = assistant.reasoningEffort
@@ -268,6 +296,10 @@ class AssistantRepository @Inject constructor(
                                 defaultModelId = assistant.modelId,
                                 defaultWebSearchMode = if (assistant.webSearchEnabled) assistant.webSearchMode else null,
                                 defaultWebSearchProvider = assistant.webSearchProvider,
+                                defaultWebSearchExaDepth = assistant.webSearchExaDepth,
+                                defaultWebSearchContextSize = assistant.webSearchContextSize,
+                                defaultWebSearchKagiSource = assistant.webSearchKagiSource,
+                                defaultWebSearchValyuSearchType = assistant.webSearchValyuSearchType,
                                 icon = assistant.icon,
                                 temperature = assistant.temperature,
                                 topP = assistant.topP,
@@ -323,6 +355,10 @@ fun AssistantDto.toEntity(): AssistantEntity {
         contextSize = contextSize,
         reasoningEffort = reasoningEffort,
         webSearchMode = webSearchMode,  // Map: defaultWebSearchMode -> webSearchMode
+        webSearchExaDepth = defaultWebSearchExaDepth,
+        webSearchContextSize = defaultWebSearchContextSize,
+        webSearchKagiSource = defaultWebSearchKagiSource,
+        webSearchValyuSearchType = defaultWebSearchValyuSearchType,
         createdAt = sdf.parse(createdAt)?.time ?: System.currentTimeMillis(),
         updatedAt = sdf.parse(updatedAt)?.time ?: System.currentTimeMillis(),
         syncStatus = SyncStatus.SYNCED

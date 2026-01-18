@@ -101,11 +101,11 @@ fun AssistantsScreen(
 
     if (showCreateDialog) {
         AssistantDialog(
-            onCreate = { name: String, instructions: String, modelId: String, description: String?, webSearchEnabled: Boolean, provider: String?, mode: String?, temp: Double?, topP: Double?, reasoning: String ->
-                viewModel.createAssistant(name, instructions, modelId, description, webSearchEnabled, provider, mode, temp, topP, reasoning)
+            onCreate = { name: String, instructions: String, modelId: String, description: String?, webSearchEnabled: Boolean, provider: String?, mode: String?, temp: Double?, topP: Double?, reasoning: String, exaDepth: String?, contextSize: String?, kagiSource: String?, valyuSearchType: String? ->
+                viewModel.createAssistant(name, instructions, modelId, description, webSearchEnabled, provider, mode, temp, topP, reasoning, exaDepth, contextSize, kagiSource, valyuSearchType)
                 showCreateDialog = false
             },
-            onUpdate = { _: String, _: String, _: String, _: String?, _: Boolean, _: String?, _: String?, _: Double?, _: Double?, _: String -> },
+            onUpdate = { _: String, _: String, _: String, _: String?, _: Boolean, _: String?, _: String?, _: Double?, _: Double?, _: String, _: String?, _: String?, _: String?, _: String? -> },
             onDismiss = { showCreateDialog = false },
             availableModels = uiState.availableModels
         )
@@ -114,8 +114,8 @@ fun AssistantsScreen(
     if (editingAssistant != null) {
         AssistantDialog(
             assistant = editingAssistant,
-            onCreate = { _: String, _: String, _: String, _: String?, _: Boolean, _: String?, _: String?, _: Double?, _: Double?, _: String -> },
-            onUpdate = { name: String, instructions: String, modelId: String, description: String?, webSearchEnabled: Boolean, provider: String?, mode: String?, temp: Double?, topP: Double?, reasoning: String ->
+            onCreate = { _: String, _: String, _: String, _: String?, _: Boolean, _: String?, _: String?, _: Double?, _: Double?, _: String, _: String?, _: String?, _: String?, _: String? -> },
+            onUpdate = { name: String, instructions: String, modelId: String, description: String?, webSearchEnabled: Boolean, provider: String?, mode: String?, temp: Double?, topP: Double?, reasoning: String, exaDepth: String?, contextSize: String?, kagiSource: String?, valyuSearchType: String? ->
                 viewModel.updateAssistant(
                     editingAssistant!!.id,
                     name,
@@ -127,7 +127,11 @@ fun AssistantsScreen(
                     mode,
                     temp,
                     topP,
-                    reasoning
+                    reasoning,
+                    exaDepth,
+                    contextSize,
+                    kagiSource,
+                    valyuSearchType
                 )
                 editingAssistant = null
             },

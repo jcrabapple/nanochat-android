@@ -20,7 +20,12 @@ data class AssistantEntity(
     val maxTokens: Int? = null,  // Maximum tokens in response (null = backend default)
     val contextSize: Int? = null,  // Number of historical messages to include (null = backend default)
     val reasoningEffort: String? = null,  // "off" | "auto" | "light" | "medium" | "heavy" (thinking budget)
-    val webSearchMode: String? = null,  // "standard" | "deep"
+    val webSearchMode: String? = null,  // "off" | "standard" | "deep"
+    // Provider-specific web search options
+    val webSearchExaDepth: String? = null,  // "fast" | "auto" | "neural" | "deep"
+    val webSearchContextSize: String? = null,  // "low" | "medium" | "high"
+    val webSearchKagiSource: String? = null,  // "web" | "news" | "search"
+    val webSearchValyuSearchType: String? = null,  // "all" | "web"
     val createdAt: Long,
     val updatedAt: Long,
     val syncStatus: SyncStatus = SyncStatus.SYNCED
