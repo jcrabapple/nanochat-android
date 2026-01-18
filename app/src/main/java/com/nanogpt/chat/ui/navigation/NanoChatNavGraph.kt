@@ -20,6 +20,10 @@ import com.nanogpt.chat.ui.projects.ProjectsScreen
 import com.nanogpt.chat.ui.settings.SettingsScreen
 import com.nanogpt.chat.ui.theme.ThemeManager
 
+import androidx.compose.ui.platform.LocalContext
+import android.content.Intent
+import android.app.Activity
+
 @Composable
 fun NanoChatNavGraph(
     navController: NavHostController = rememberNavController(),
@@ -49,11 +53,14 @@ fun NanoChatNavGraph(
         startDestination = startDestination
     ) {
         composable(Screen.Setup.route) {
+            val context = LocalContext.current
             SetupScreen(
                 onComplete = {
-                    navController.navigate("chat") {
-                        popUpTo(Screen.Setup.route) { inclusive = true }
-                    }
+                    // Restart the app to ensure Retrofit is re-initialized with the new URL
+                    val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
+                    intent?.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(intent)
+                    (context as? Activity)?.finishAffinity()
                 }
             )
         }

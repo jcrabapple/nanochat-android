@@ -7,17 +7,36 @@ import androidx.security.crypto.MasterKey
 
 class SecureStorage(context: Context) {
 
-    private val masterKey = MasterKey.Builder(context)
-        .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-        .build()
+    private val sharedPreferences: SharedPreferences by lazy {
+        try {
+            createEncryptedSharedPreferences(context)
+        } catch (e: Exception) {
+            // If initialization fails (e.g. key invalidated), clear and retry
+            context.getSharedPreferences("secure_prefs", Context.MODE_PRIVATE).edit().clear().apply()
+            try {
+                createEncryptedSharedPreferences(context)
+            } catch (e2: Exception) {
+                // If it fails again, we cannot proceed securely.
+                // Re-throw the exception to crash the app rather than compromising security.
+                // This is a critical failure of the device's Keystore or the encryption library.
+                throw RuntimeException("Critical: Failed to initialize secure storage after retry", e2)
+            }
+        }
+    }
 
-    private val sharedPreferences: SharedPreferences = EncryptedSharedPreferences.create(
-        context,
-        "secure_prefs",
-        masterKey,
-        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-    )
+    private fun createEncryptedSharedPreferences(context: Context): SharedPreferences {
+        val masterKey = MasterKey.Builder(context)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            .build()
+
+        return EncryptedSharedPreferences.create(
+            context,
+            "secure_prefs",
+            masterKey,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+        )
+    }
 
     companion object {
         private const val KEY_SESSION_TOKEN = "session_token"

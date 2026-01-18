@@ -6,6 +6,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nanogpt.chat.BuildConfig
 import com.nanogpt.chat.data.local.SecureStorage
+import com.nanogpt.chat.data.local.dao.AssistantDao
+import com.nanogpt.chat.data.repository.toEntity
 import com.nanogpt.chat.utils.DebugLogger
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -28,6 +30,7 @@ import javax.net.ssl.SSLException
 @HiltViewModel
 class SetupViewModel @Inject constructor(
     private val secureStorage: SecureStorage,
+    private val assistantDao: AssistantDao,
     private val debugLogger: DebugLogger
 ) : ViewModel() {
 
@@ -133,6 +136,27 @@ class SetupViewModel @Inject constructor(
 
                 if (response.isSuccessful) {
                     debugLogger.logInfo(TAG, "API validation successful - credentials are valid")
+
+                    // Sync assistants from server immediately after successful connection
+                    try {
+                        debugLogger.logInfo(TAG, "Fetching assistants from server...")
+                        val assistantsResponse = tempApi.getAssistants()
+                        if (assistantsResponse.isSuccessful && assistantsResponse.body() != null) {
+                            val assistants = assistantsResponse.body()!!
+                            debugLogger.logInfo(TAG, "Successfully fetched ${assistants.size} assistants")
+
+                            // Save assistants to database so they're available after app restart
+                            val entities = assistants.map { it.toEntity() }
+                            assistantDao.insertAssistants(entities)
+                            debugLogger.logInfo(TAG, "Saved ${entities.size} assistants to database")
+                        } else {
+                            debugLogger.logWarning(TAG, "Failed to fetch assistants (HTTP ${assistantsResponse.code()})")
+                        }
+                    } catch (e: Exception) {
+                        // Don't fail setup if assistant fetch fails, just log it
+                        debugLogger.logWarning(TAG, "Failed to fetch assistants: ${e.message}")
+                    }
+
                     _uiState.value = _uiState.value.copy(isTesting = false)
                     onSuccess()
                 } else {
@@ -246,11 +270,10 @@ class SetupViewModel @Inject constructor(
             }
 
             // Validate port range if specified
-            uri.port?.let { port ->
-                if (port !in 1..65535) {
-                    debugLogger.logWarning(TAG, "URL rejected: invalid port $port")
-                    return false
-                }
+            val port = uri.port
+            if (port != -1 && port !in 1..65535) {
+                debugLogger.logWarning(TAG, "URL rejected: invalid port $port")
+                return false
             }
 
             true
