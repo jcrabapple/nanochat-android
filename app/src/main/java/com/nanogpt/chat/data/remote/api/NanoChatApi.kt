@@ -147,6 +147,10 @@ interface NanoChatApi {
     @POST("/api/karakeep/save-chat")
     suspend fun saveChatToKarakeep(@Body request: SaveChatToKarakeepRequest): Response<SaveChatToKarakeepResponse>
 
+    // ============== Follow-up Questions ==============
+    @POST("/api/generate-follow-up-questions")
+    suspend fun generateFollowUpQuestions(@Body request: GenerateFollowUpQuestionsRequest): Response<GenerateFollowUpQuestionsResponse>
+
     // ============== NanoGPT API Balance ==============
     @POST("/api/nano-gpt/balance")
     suspend fun getNanoGptBalance(): Response<NanoGptBalanceDto>

@@ -24,18 +24,29 @@ import androidx.compose.foundation.text.ClickableText
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Circle
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -134,7 +145,7 @@ fun SimpleMarkdownText(
 }
 
 /**
- * Terminal-style code block with header bar
+ * Terminal-style code block with header bar and copy button
  */
 @Composable
 private fun TerminalCodeBlock(
@@ -142,6 +153,9 @@ private fun TerminalCodeBlock(
     language: String,
     modifier: Modifier = Modifier
 ) {
+    val clipboardManager = LocalClipboardManager.current
+    var showCopiedFeedback by remember { mutableStateOf(false) }
+
     Surface(
         modifier = modifier
             .fillMaxWidth()
@@ -200,22 +214,66 @@ private fun TerminalCodeBlock(
                 }
             }
 
-            // Code content with better contrast - fill max width to ensure background covers
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                color = MaterialTheme.colorScheme.surfaceContainerLow,
-                shape = RoundedCornerShape(0.dp, 0.dp, 12.dp, 12.dp)
+            // Code content with copy button overlay
+            Box(
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Text(
-                    text = code.trimEnd(),
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    shape = RoundedCornerShape(0.dp, 0.dp, 12.dp, 12.dp)
+                ) {
+                    Text(
+                        text = code.trimEnd(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp)
+                            .padding(bottom = 34.dp),
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+
+                // Copy button in bottom right corner
+                IconButton(
+                    onClick = {
+                        clipboardManager.setText(AnnotatedString(code))
+                        showCopiedFeedback = true
+                    },
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(14.dp),
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 13.sp,
-                    lineHeight = 18.sp,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+                        .align(Alignment.BottomEnd)
+                        .padding(8.dp)
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f)
+                        )
+                ) {
+                    Icon(
+                        imageVector = if (showCopiedFeedback) {
+                            Icons.Filled.Check
+                        } else {
+                            Icons.Filled.ContentCopy
+                        },
+                        contentDescription = if (showCopiedFeedback) "Copied!" else "Copy code",
+                        tint = if (showCopiedFeedback) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+        }
+
+        // Reset the copied feedback after 2 seconds
+        if (showCopiedFeedback) {
+            LaunchedEffect(showCopiedFeedback) {
+                delay(2000)
+                showCopiedFeedback = false
             }
         }
     }

@@ -94,6 +94,7 @@ import com.nanogpt.chat.ui.chat.components.WebSearchProvider
 import com.nanogpt.chat.ui.chat.components.ImageViewer
 import com.nanogpt.chat.ui.chat.components.InlineVideoPlayer
 import com.nanogpt.chat.ui.chat.components.VideoViewer
+import com.nanogpt.chat.ui.chat.components.FollowUpQuestionsSection
 import com.nanogpt.chat.util.copyToClipboard
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -218,28 +219,65 @@ fun ChatScreen(
                                 text = uiState.conversation?.title ?: "Chat",
                                 style = MaterialTheme.typography.titleMedium
                             )
-                            // Clickable model selector
+                            // Assistant and model info row
                             Row(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .clickable { showModelSelector = true },
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                uiState.selectedModel?.let { model ->
-                                    Text(
-                                        text = model.name,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        overflow = TextOverflow.Ellipsis,
-                                        maxLines = 1
-                                    )
-                                    Icon(
-                                        Icons.Default.ArrowDropDown,
-                                        contentDescription = "Select model",
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(16.dp)
-                                    )
+                                // Clickable assistant selector
+                                uiState.selectedAssistant?.let { assistant ->
+                                    Row(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .clickable { showAssistantSheet = true },
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Filled.Person,
+                                            contentDescription = "Assistant",
+                                            tint = MaterialTheme.colorScheme.secondary,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Text(
+                                            text = assistant.name,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.secondary,
+                                            overflow = TextOverflow.Ellipsis,
+                                            maxLines = 1
+                                        )
+                                        Icon(
+                                            Icons.Default.ArrowDropDown,
+                                            contentDescription = "Select assistant",
+                                            tint = MaterialTheme.colorScheme.secondary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+
+                                // Clickable model selector
+                                Row(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .clickable { showModelSelector = true },
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    uiState.selectedModel?.let { model ->
+                                        Text(
+                                            text = model.name,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            overflow = TextOverflow.Ellipsis,
+                                            maxLines = 1
+                                        )
+                                        Icon(
+                                            Icons.Default.ArrowDropDown,
+                                            contentDescription = "Select model",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -452,6 +490,15 @@ fun ChatScreen(
                     }
                 }
             }
+
+            // Follow-up questions section
+            FollowUpQuestionsSection(
+                questions = uiState.followUpQuestions,
+                isLoading = uiState.isLoadingFollowUpQuestions,
+                onQuestionClick = { question ->
+                    viewModel.sendMessage(question)
+                }
+            )
 
             // Error banner
             uiState.error?.let { error ->

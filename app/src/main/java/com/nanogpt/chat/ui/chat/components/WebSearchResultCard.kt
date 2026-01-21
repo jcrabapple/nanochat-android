@@ -1,5 +1,6 @@
 package com.nanogpt.chat.ui.chat.components
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -10,6 +11,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Card
@@ -19,6 +22,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
@@ -32,8 +39,11 @@ import kotlinx.serialization.json.jsonPrimitive
 fun WebSearchResultCard(
     jsonData: JsonObject,
     onUrlClick: (String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    initiallyExpanded: Boolean = false
 ) {
+    var isExpanded by remember { mutableStateOf(initiallyExpanded) }
+
     // Extract data from JSON
     val query = jsonData["query"]?.jsonPrimitive?.content ?: "Search"
     val sources = jsonData["sources"]?.jsonArray ?: JsonArray(emptyList())
@@ -49,12 +59,21 @@ fun WebSearchResultCard(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp)
         ) {
-            // Header
+            // Header - always visible and clickable
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(bottom = 8.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp)
+                    .then(
+                        if (isExpanded) {
+                            Modifier
+                        } else {
+                            // Make entire header clickable when collapsed
+                            Modifier.clickable { isExpanded = !isExpanded }
+                        }
+                    )
             ) {
                 Icon(
                     Icons.Default.Search,
@@ -64,42 +83,63 @@ fun WebSearchResultCard(
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    "Web Search Results",
+                    "Sources",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary
                 )
                 Spacer(modifier = Modifier.weight(1f))
                 Text(
-                    "${sources.size} results",
+                    "${sources.size} ${if (sources.size == 1) "source" else "sources"}",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                Spacer(modifier = Modifier.width(8.dp))
+                Icon(
+                    if (isExpanded) {
+                        Icons.Default.ExpandLess
+                    } else {
+                        Icons.Default.ExpandMore
+                    },
+                    contentDescription = if (isExpanded) "Collapse" else "Expand",
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
 
-            // Provider info
-            Text(
-                "Searched for \"$query\"",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-
-            // Results
-            sources.forEach { jsonElement ->
-                if (jsonElement is JsonObject) {
-                    val title = jsonElement["title"]?.jsonPrimitive?.content ?: ""
-                    val url = jsonElement["url"]?.jsonPrimitive?.content ?: ""
-                    val snippet = jsonElement["snippet"]?.jsonPrimitive?.content ?: ""
-                    val publishedDate = jsonElement["publishedDate"]?.jsonPrimitive?.content
-
-                    WebSearchResultItem(
-                        title = title,
-                        url = url,
-                        snippet = snippet,
-                        publishedDate = publishedDate,
-                        onUrlClick = onUrlClick
+            // Expandable content
+            if (isExpanded) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp)
+                        .padding(bottom = 12.dp)
+                ) {
+                    // Provider info
+                    Text(
+                        "Searched for \"$query\"",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 8.dp)
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Results
+                    sources.forEach { jsonElement ->
+                        if (jsonElement is JsonObject) {
+                            val title = jsonElement["title"]?.jsonPrimitive?.content ?: ""
+                            val url = jsonElement["url"]?.jsonPrimitive?.content ?: ""
+                            val snippet = jsonElement["snippet"]?.jsonPrimitive?.content ?: ""
+                            val publishedDate = jsonElement["publishedDate"]?.jsonPrimitive?.content
+
+                            WebSearchResultItem(
+                                title = title,
+                                url = url,
+                                snippet = snippet,
+                                publishedDate = publishedDate,
+                                onUrlClick = onUrlClick
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
+                    }
                 }
             }
         }

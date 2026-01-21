@@ -451,11 +451,13 @@ class ChatViewModel @Inject constructor(
         applicationContext = context
     }
 
-    fun sendMessage() {
-        if (_inputText.value.isBlank() || isGenerating) return
+    fun sendMessage(message: String = _inputText.value) {
+        if (message.isBlank() || isGenerating) return
 
-        val message = _inputText.value
         _inputText.value = ""
+
+        // Clear previous follow-up questions when sending a new message
+        clearFollowUpQuestions()
 
         viewModelScope.launch {
             sendMessageInternal(message)
@@ -624,13 +626,16 @@ class ChatViewModel @Inject constructor(
                             }
 
                             // Fetch final message state from server and complete generation
-                            val finalConvId = event.messageId ?: conversationId
-                            if (finalConvId != null) {
+                            // Note: The backend incorrectly sends conversation_id as messageId in the Complete event
+                            // So we use the conversationId from the ViewModel and find the last assistant message
+                            val convId = conversationId
+                            if (convId != null) {
                                 viewModelScope.launch {
-                                    fetchAndSaveMessages(finalConvId)
-                                    finishGeneration(finalConvId)
+                                    val fetchedMessages = fetchAndSaveMessages(convId)
+                                    finishGeneration(convId, fetchedMessages)
                                 }
                             } else {
+                                android.util.Log.e("ChatViewModel", "SSE stream complete but conversationId is null")
                                 isGenerating = false
                                 _uiState.value = _uiState.value.copy(isGenerating = false)
                             }
@@ -793,6 +798,19 @@ class ChatViewModel @Inject constructor(
                             conversationTitlePoller.startPolling(convId)
                             titleGenerated = true
                         }
+
+                        // Generate follow-up questions for the last assistant message
+                        // Only for text generation models, not image or video generation
+                        val isImageModel = isImageGenerationModel(lastAssistantMessage.modelId)
+                        val isVideoModel = isVideoGenerationModel(lastAssistantMessage.modelId)
+                        if (!isImageModel && !isVideoModel) {
+                            android.util.Log.d("ChatViewModel", "Generating follow-up questions for text model: ${lastAssistantMessage.modelId}")
+                            generateFollowUpQuestions(lastAssistantMessage.id)
+                        } else {
+                            android.util.Log.d("ChatViewModel", "Skipping follow-up questions for image/video model: ${lastAssistantMessage.modelId}")
+                            // Clear any existing follow-up questions
+                            clearFollowUpQuestions()
+                        }
                     }
                 }
             } catch (e: Exception) {
@@ -908,12 +926,16 @@ class ChatViewModel @Inject constructor(
 
     /**
      * Fetches messages from API and saves them to database
+     * @return The fetched messages as domain models
      */
-    private suspend fun fetchAndSaveMessages(convId: String) {
-        try {
+    private suspend fun fetchAndSaveMessages(convId: String): List<Message> {
+        return try {
             val messagesResponse = api.getMessages(convId)
             if (messagesResponse.isSuccessful && messagesResponse.body() != null) {
                 val messages = messagesResponse.body()!!
+                android.util.Log.d("ChatViewModel", "fetchAndSaveMessages: Fetched ${messages.size} messages")
+                android.util.Log.d("ChatViewModel", "fetchAndSaveMessages: Message IDs: ${messages.map { "${it.role}:${it.id}" }}")
+
 
                 // Get current video URLs to filter out redundant text messages
                 val existingVideoUrls = _messages.value
@@ -961,17 +983,24 @@ class ChatViewModel @Inject constructor(
 
                     // Perform atomic replace
                     messageDao.replaceMessages(idsToDelete, messageEntities)
+
+                    // Return the messages for immediate use (converted to domain models)
+                    filteredMessages.map { it.toDomain() }
                 }
+            } else {
+                emptyList()
             }
         } catch (e: Exception) {
             android.util.Log.e("ChatViewModel", "Failed to fetch and save messages: ${e.message}")
+            emptyList()
         }
     }
 
     /**
      * Marks generation as complete and handles post-generation tasks
+     * @param fetchedMessages The freshly fetched messages from the server (optional, for immediate use)
      */
-    private suspend fun finishGeneration(convId: String?) {
+    private suspend fun finishGeneration(convId: String?, fetchedMessages: List<Message>? = null) {
         isGenerating = false
         _uiState.value = _uiState.value.copy(isGenerating = false)
 
@@ -983,6 +1012,26 @@ class ChatViewModel @Inject constructor(
             // Reload conversation after a delay to get the updated title
             kotlinx.coroutines.delay(3000)
             loadConversation(silent = true)
+        }
+
+        // Generate follow-up questions for the last assistant message
+        // Use the fetched messages if provided, otherwise fall back to _messages.value
+        val messagesList = fetchedMessages ?: _messages.value
+        val lastAssistantMessage = messagesList.lastOrNull { it.role == "assistant" }
+        android.util.Log.d("ChatViewModel", "finishGeneration: Total messages in list: ${messagesList.size}")
+        android.util.Log.d("ChatViewModel", "finishGeneration: Last assistant message: ${lastAssistantMessage?.id}")
+        android.util.Log.d("ChatViewModel", "finishGeneration: Using fetchedMessages: ${fetchedMessages != null}")
+        if (lastAssistantMessage != null) {
+            val isImageModel = isImageGenerationModel(lastAssistantMessage.modelId)
+            val isVideoModel = isVideoGenerationModel(lastAssistantMessage.modelId)
+            if (!isImageModel && !isVideoModel) {
+                android.util.Log.d("ChatViewModel", "Generating follow-up questions for text model: ${lastAssistantMessage.modelId}")
+                generateFollowUpQuestions(lastAssistantMessage.id)
+            } else {
+                android.util.Log.d("ChatViewModel", "Skipping follow-up questions for image/video model: ${lastAssistantMessage.modelId}")
+                // Clear any existing follow-up questions
+                clearFollowUpQuestions()
+            }
         }
     }
 
@@ -1175,6 +1224,73 @@ class ChatViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    fun generateFollowUpQuestions(messageId: String) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val convId = conversationId ?: uiState.value.conversation?.id
+                if (convId.isNullOrBlank()) {
+                    android.util.Log.d("ChatViewModel", "No active conversation for follow-up questions")
+                    return@launch
+                }
+
+                // First, fetch settings to check if follow-up questions are enabled
+                val settingsResponse = api.getUserSettings()
+                if (!settingsResponse.isSuccessful || settingsResponse.body() == null) {
+                    android.util.Log.d("ChatViewModel", "Failed to fetch settings for follow-up questions")
+                    return@launch
+                }
+
+                val settings = settingsResponse.body()!!
+                if (!settings.followUpQuestionsEnabled) {
+                    android.util.Log.d("ChatViewModel", "Follow-up questions disabled in settings")
+                    _uiState.value = _uiState.value.copy(followUpQuestions = emptyList())
+                    return@launch
+                }
+
+                android.util.Log.d("ChatViewModel", "Generating follow-up questions for message $messageId")
+                _uiState.value = _uiState.value.copy(isLoadingFollowUpQuestions = true)
+
+                val request = com.nanogpt.chat.data.remote.dto.GenerateFollowUpQuestionsRequest(
+                    conversationId = convId,
+                    messageId = messageId
+                )
+
+                val response = api.generateFollowUpQuestions(request)
+                if (response.isSuccessful && response.body() != null) {
+                    val body = response.body()!!
+                    if (body.ok) {
+                        android.util.Log.d("ChatViewModel", "Generated ${body.suggestions.size} follow-up questions")
+                        withContext(kotlinx.coroutines.Dispatchers.Main) {
+                            _uiState.value = _uiState.value.copy(
+                                followUpQuestions = body.suggestions,
+                                isLoadingFollowUpQuestions = false
+                            )
+                        }
+                    } else {
+                        android.util.Log.d("ChatViewModel", "Follow-up questions generation returned ok=false")
+                        withContext(kotlinx.coroutines.Dispatchers.Main) {
+                            _uiState.value = _uiState.value.copy(isLoadingFollowUpQuestions = false)
+                        }
+                    }
+                } else {
+                    android.util.Log.e("ChatViewModel", "Failed to generate follow-up questions: HTTP ${response.code()}")
+                    withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        _uiState.value = _uiState.value.copy(isLoadingFollowUpQuestions = false)
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("ChatViewModel", "Error generating follow-up questions: ${e.message}", e)
+                withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    _uiState.value = _uiState.value.copy(isLoadingFollowUpQuestions = false)
+                }
+            }
+        }
+    }
+
+    fun clearFollowUpQuestions() {
+        _uiState.value = _uiState.value.copy(followUpQuestions = emptyList())
     }
 
     fun clearError() {
@@ -1975,7 +2091,9 @@ data class ChatUiState(
     val availableAssistants: List<AssistantEntity> = emptyList(),
     val fileAttachments: List<FileAttachment> = emptyList(),
     val isGeneratingVideo: Boolean = false,
-    val videoGenerationStatus: VideoGenerationStatus? = null
+    val videoGenerationStatus: VideoGenerationStatus? = null,
+    val followUpQuestions: List<String> = emptyList(),
+    val isLoadingFollowUpQuestions: Boolean = false
 )
 
 enum class VideoGenerationStatus {
